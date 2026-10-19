@@ -275,6 +275,7 @@
                 <label [for]="prop.id" class="tool-prop-label">{{ prop.label }}</label>
                 <input
                   [id]="prop.id"
+                  [attr.aria-label]="tool.label + ' ' + prop.label"
                   type="number"
                   class="number-input"
                   [value]="prop.value()"
