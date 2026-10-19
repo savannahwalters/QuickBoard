@@ -1,14 +1,5 @@
 import { bootstrapApplication } from '@angular/platform-browser';
-import { AppSettingsService } from './services/app-settings.service';
+import { appConfig } from './app/app.config';
+import { App } from './app/app';
 
-async function bootstrap(): Promise<void> {
-  // Hydrate before importing the app: stores capture defaults at module evaluation time.
-  await new AppSettingsService().loadCurrentSettings();
-  const [{ appConfig }, { App }] = await Promise.all([
-    import('./app/app.config'),
-    import('./app/app'),
-  ]);
-  await bootstrapApplication(App, appConfig);
-}
-
-void bootstrap().catch((err) => console.error(err));
+bootstrapApplication(App, appConfig).catch((err) => console.error(err));

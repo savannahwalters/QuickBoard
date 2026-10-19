@@ -14,7 +14,7 @@ import { FormsModule } from '@angular/forms';
 import { appSettings } from 'src/settings-loader';
 import { AppSettingsService, type AppSettings } from '../../../services/app-settings.service';
 import { PlatformFileService, IOS_DEFAULT_FOLDER } from '../../../services/platform-file.service';
-import { EXPORT_RESOLUTIONS } from '../../export-settings/export-resolutions';
+import { getExportResolutions } from '../../export-settings/export-resolutions';
 import themes from '../../../shared/themes.json';
 import { ColorPickerComponent } from '../../canvas/color-picker/color-picker.component';
 
@@ -45,12 +45,6 @@ const EXPORT_FORMATS = [
   { id: 'video', label: 'MP4 Video' },
   { id: 'pdf', label: 'Storyboard PDF' },
 ];
-
-// Export resolution options, indexed into the shared EXPORT_RESOLUTIONS list
-const EXPORT_RESOLUTION_OPTIONS = EXPORT_RESOLUTIONS.map((resolution, index) => ({
-  id: String(index),
-  label: resolution.label,
-}));
 
 interface SelectOption {
   id: string;
@@ -337,7 +331,10 @@ export class SettingsComponent implements OnInit, OnDestroy {
       id: 'export-default-resolution',
       label: 'Resolution',
       value: this.exportDefaultResolution,
-      options: EXPORT_RESOLUTION_OPTIONS,
+      options: getExportResolutions().map((resolution, index) => ({
+        id: String(index),
+        label: resolution.label,
+      })),
       useNgModel: true,
     },
   ];
@@ -707,7 +704,7 @@ export class SettingsComponent implements OnInit, OnDestroy {
         defaultResolutionIndex: (() => {
           const n = Number(this.exportDefaultResolution());
           const idx = Number.isFinite(n) ? Math.round(n) : 0;
-          return Math.max(0, Math.min(idx, EXPORT_RESOLUTIONS.length - 1));
+          return Math.max(0, Math.min(idx, getExportResolutions().length - 1));
         })(),
       },
       onionSkin: {
