@@ -52,37 +52,38 @@ interface AppState {
   height: number;
 }
 
-const firstBoardId = crypto.randomUUID();
-
-const initialState: AppState = {
-  boards: [
-    {
-      id: firstBoardId,
-      scriptData: null,
-      previewUrl: null,
-      backgroundColor: appSettings.board.defaultBackgroundColor,
-      duration: appSettings.board.defaultDuration,
-    },
-  ],
-  currentBoardId: firstBoardId,
-  onionSkinEnabled: false,
-  onionFramesBack: appSettings.onionSkin?.framesBack ?? 1,
-  onionFramesForward: appSettings.onionSkin?.framesForward ?? 1,
-  onionPrevColor: appSettings.onionSkin?.prevColor ?? '#ff00ff',
-  onionNextColor: appSettings.onionSkin?.nextColor ?? '#00b3ff',
-  audioTracks: [],
-  audioLaneCount: appSettings.audio.defaultLaneCount,
-  audioLaneMixers: [{ volume: appSettings.audio.defaultVolume, muted: false }],
-  isPlaying: false,
-  currentTime: 0,
-  fps: appSettings.board.defaultFps,
-  width: appSettings.board.width,
-  height: appSettings.board.height,
-};
+function createInitialState(): AppState {
+  const firstBoardId = crypto.randomUUID();
+  return {
+    boards: [
+      {
+        id: firstBoardId,
+        scriptData: null,
+        previewUrl: null,
+        backgroundColor: appSettings.canvas.defaultBackgroundColor,
+        duration: appSettings.board.defaultDuration,
+      },
+    ],
+    currentBoardId: firstBoardId,
+    onionSkinEnabled: false,
+    onionFramesBack: appSettings.onionSkin?.framesBack ?? 1,
+    onionFramesForward: appSettings.onionSkin?.framesForward ?? 1,
+    onionPrevColor: appSettings.onionSkin?.prevColor ?? '#ff00ff',
+    onionNextColor: appSettings.onionSkin?.nextColor ?? '#00b3ff',
+    audioTracks: [],
+    audioLaneCount: appSettings.audio.defaultLaneCount,
+    audioLaneMixers: [{ volume: appSettings.audio.defaultVolume, muted: false }],
+    isPlaying: false,
+    currentTime: 0,
+    fps: appSettings.board.defaultFps,
+    width: appSettings.board.width,
+    height: appSettings.board.height,
+  };
+}
 
 export const AppStore = signalStore(
   { providedIn: 'root' },
-  withState(initialState),
+  withState(createInitialState),
   withMethods((store) => {
     const canvasDataService = inject(CanvasDataService);
     return {
@@ -93,7 +94,7 @@ export const AppStore = signalStore(
       addBoard() {
         const currentBoard = store.boards().find((board) => board.id === store.currentBoardId());
         const backgroundColor =
-          currentBoard?.backgroundColor ?? appSettings.board.defaultBackgroundColor;
+          currentBoard?.backgroundColor ?? appSettings.canvas.defaultBackgroundColor;
         const duration = currentBoard?.duration ?? appSettings.board.defaultDuration;
         const newBoard: Board = {
           id: crypto.randomUUID(),

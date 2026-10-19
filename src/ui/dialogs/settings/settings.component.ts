@@ -14,7 +14,7 @@ import { FormsModule } from '@angular/forms';
 import { appSettings } from 'src/settings-loader';
 import { AppSettingsService, type AppSettings } from '../../../services/app-settings.service';
 import { PlatformFileService, IOS_DEFAULT_FOLDER } from '../../../services/platform-file.service';
-import { EXPORT_RESOLUTIONS } from '../../export-settings/export-resolutions';
+import { getExportResolutions } from '../../export-settings/export-resolutions';
 import themes from '../../../shared/themes.json';
 import { ColorPickerComponent } from '../../canvas/color-picker/color-picker.component';
 
@@ -29,7 +29,7 @@ const AVAILABLE_TOOLS = [
   { id: 'eraser', label: 'Eraser' },
   { id: 'object-eraser', label: 'Object Eraser' },
   { id: 'select', label: 'Select' },
-  { id: 'image', label: 'Image' },
+  { id: 'zoom', label: 'Zoom' },
 ];
 
 // Theme options for user-selectable concrete themes (system is chosen separately)
@@ -45,12 +45,6 @@ const EXPORT_FORMATS = [
   { id: 'video', label: 'MP4 Video' },
   { id: 'pdf', label: 'Storyboard PDF' },
 ];
-
-// Export resolution options, indexed into the shared EXPORT_RESOLUTIONS list
-const EXPORT_RESOLUTION_OPTIONS = EXPORT_RESOLUTIONS.map((resolution, index) => ({
-  id: String(index),
-  label: resolution.label,
-}));
 
 interface SelectOption {
   id: string;
@@ -88,6 +82,32 @@ interface ColorFieldConfig {
   label: string;
   value: WritableSignal<string>;
   fieldClass?: string;
+}
+
+interface ToolProperty {
+  id: string;
+  label: string;
+  value: WritableSignal<number>;
+  min?: number;
+  max?: number;
+  unit?: string;
+}
+
+interface ToolFieldConfig {
+  id: string;
+  label: string;
+  properties: readonly ToolProperty[];
+}
+
+interface SettingsSection {
+  id: string;
+  title: string;
+  gridClass?: string;
+  checkboxFields?: readonly CheckboxFieldConfig[];
+  numberFields?: readonly NumberFieldConfig[];
+  selectFields?: readonly SelectFieldConfig[];
+  colorFields?: readonly ColorFieldConfig[];
+  toolFields?: readonly ToolFieldConfig[];
 }
 
 @Component({
@@ -212,6 +232,24 @@ export class SettingsComponent implements OnInit, OnDestroy {
     this.getSafeSettingValue('onionSkin.nextColor', '#00b3ff') as string
   );
 
+  // Tool default properties
+  readonly pencilSize = signal<number>(this.getSafeSettingValue('tools.pencil.size', 5) as number);
+  readonly brushSize = signal<number>(this.getSafeSettingValue('tools.brush.size', 5) as number);
+  readonly brushSpacing = signal<number>(
+    this.getSafeSettingValue('tools.brush.spacing', 45) as number
+  );
+  readonly eraserSize = signal<number>(this.getSafeSettingValue('tools.eraser.size', 5) as number);
+  readonly rectangleSize = signal<number>(
+    this.getSafeSettingValue('tools.rectangle.size', 5) as number
+  );
+  readonly circleSize = signal<number>(this.getSafeSettingValue('tools.circle.size', 5) as number);
+  readonly polygonSize = signal<number>(
+    this.getSafeSettingValue('tools.polygon.size', 5) as number
+  );
+  readonly bucketFillTolerance = signal<number>(
+    this.getSafeSettingValue('tools.bucketFill.tolerance', 16) as number
+  );
+
   readonly savingCheckboxFields: readonly CheckboxFieldConfig[] = [
     {
       id: 'saved-toast-checkbox',
@@ -248,14 +286,14 @@ export class SettingsComponent implements OnInit, OnDestroy {
   readonly audioNumberFields: readonly NumberFieldConfig[] = [
     {
       id: 'default-lanes',
-      label: 'Default Audio Tracks',
+      label: 'Audio Tracks',
       value: this.defaultLaneCount,
       min: 1,
       max: 4,
     },
     {
       id: 'default-volume',
-      label: 'Default Clip Volume',
+      label: 'Clip Volume',
       value: this.defaultVolume,
       min: 0,
       max: 100,
@@ -293,7 +331,10 @@ export class SettingsComponent implements OnInit, OnDestroy {
       id: 'export-default-resolution',
       label: 'Resolution',
       value: this.exportDefaultResolution,
-      options: EXPORT_RESOLUTION_OPTIONS,
+      options: getExportResolutions().map((resolution, index) => ({
+        id: String(index),
+        label: resolution.label,
+      })),
       useNgModel: true,
     },
   ];
@@ -428,6 +469,118 @@ export class SettingsComponent implements OnInit, OnDestroy {
     },
   ];
 
+  readonly toolFields: readonly ToolFieldConfig[] = [
+    {
+      id: 'tool-pencil',
+      label: 'Pencil',
+      properties: [{ id: 'pencil-size', label: 'Size', value: this.pencilSize, min: 1, max: 500 }],
+    },
+    {
+      id: 'tool-brush',
+      label: 'Brush',
+      properties: [
+        { id: 'brush-size', label: 'Size', value: this.brushSize, min: 1, max: 500 },
+        { id: 'brush-spacing', label: 'Spacing', value: this.brushSpacing, min: 10, max: 200 },
+      ],
+    },
+    {
+      id: 'tool-eraser',
+      label: 'Eraser',
+      properties: [{ id: 'eraser-size', label: 'Size', value: this.eraserSize, min: 1, max: 500 }],
+    },
+    {
+      id: 'tool-rectangle',
+      label: 'Rectangle',
+      properties: [
+        { id: 'rectangle-size', label: 'Stroke', value: this.rectangleSize, min: 1, max: 500 },
+      ],
+    },
+    {
+      id: 'tool-circle',
+      label: 'Circle',
+      properties: [
+        { id: 'circle-size', label: 'Stroke', value: this.circleSize, min: 1, max: 500 },
+      ],
+    },
+    {
+      id: 'tool-polygon',
+      label: 'Polygon',
+      properties: [
+        { id: 'polygon-size', label: 'Stroke', value: this.polygonSize, min: 1, max: 500 },
+      ],
+    },
+    {
+      id: 'tool-bucket-fill',
+      label: 'Bucket Fill',
+      properties: [
+        {
+          id: 'bucket-fill-tolerance',
+          label: 'Sensitivity',
+          value: this.bucketFillTolerance,
+          min: 0,
+          max: 128,
+        },
+      ],
+    },
+  ];
+
+  // All settings sections configuration
+  readonly sections: readonly SettingsSection[] = [
+    {
+      id: 'saving',
+      title: 'Saving',
+      gridClass: 'saving-grid',
+      checkboxFields: this.savingCheckboxFields,
+      numberFields: this.savingNumberFields,
+    },
+    {
+      id: 'themes',
+      title: 'Themes',
+      selectFields: this.themeSelectFields,
+    },
+    {
+      id: 'export',
+      title: 'Export Defaults',
+      selectFields: this.exportSelectFields,
+    },
+    {
+      id: 'audio',
+      title: 'Audio Defaults',
+      numberFields: this.audioNumberFields,
+    },
+    {
+      id: 'canvas',
+      title: 'Canvas Defaults',
+      gridClass: 'canvas-grid',
+      colorFields: this.canvasColorFields,
+      selectFields: this.canvasSelectFields,
+      checkboxFields: this.canvasCheckboxFields,
+    },
+    {
+      id: 'boil',
+      title: 'Line Boiling Defaults',
+      numberFields: this.boilNumberFields,
+      checkboxFields: this.boilCheckboxFields,
+    },
+    {
+      id: 'onion',
+      title: 'Onion Skin Defaults',
+      numberFields: this.onionNumberFields,
+      colorFields: this.onionColorFields,
+    },
+    {
+      id: 'tools',
+      title: 'Tool Defaults',
+      gridClass: 'tools-grid',
+      toolFields: this.toolFields,
+    },
+    {
+      id: 'timeline',
+      title: 'Timeline (Experimental)',
+      numberFields: this.timelineNumberFields,
+    },
+  ];
+
   // UI states
   readonly showRestoreConfirm = signal(false);
   readonly saving = signal(false);
@@ -436,6 +589,9 @@ export class SettingsComponent implements OnInit, OnDestroy {
 
   readonly restoreConfirmTop = signal(0);
   readonly restoreConfirmRight = signal(8);
+
+  // Collapse states for sections - stored in a Map keyed by section id
+  readonly collapsedSections = signal<Set<string>>(new Set());
 
   readonly restartShaking = signal(false);
   readonly restartChanged = signal(false);
@@ -548,7 +704,7 @@ export class SettingsComponent implements OnInit, OnDestroy {
         defaultResolutionIndex: (() => {
           const n = Number(this.exportDefaultResolution());
           const idx = Number.isFinite(n) ? Math.round(n) : 0;
-          return Math.max(0, Math.min(idx, EXPORT_RESOLUTIONS.length - 1));
+          return Math.max(0, Math.min(idx, getExportResolutions().length - 1));
         })(),
       },
       onionSkin: {
@@ -556,6 +712,15 @@ export class SettingsComponent implements OnInit, OnDestroy {
         framesForward: this.onionFramesForward(),
         prevColor: this.onionPrevColor(),
         nextColor: this.onionNextColor(),
+      },
+      tools: {
+        pencil: { size: this.pencilSize() },
+        brush: { size: this.brushSize(), spacing: this.brushSpacing() },
+        eraser: { size: this.eraserSize() },
+        rectangle: { size: this.rectangleSize() },
+        circle: { size: this.circleSize() },
+        polygon: { size: this.polygonSize() },
+        bucketFill: { tolerance: this.bucketFillTolerance() },
       },
     };
   }
@@ -605,7 +770,7 @@ export class SettingsComponent implements OnInit, OnDestroy {
       this.savedToast.set(resolvedSavedToast);
       this.initialSave.set(resolvedInitialSave);
       this.defaultLaneCount.set(getValue(settings, 'audio.defaultLaneCount', 1) as number);
-      this.defaultVolume.set(((getValue(settings, 'audio.defaultVolume', 1) as number) || 1) * 100);
+      this.defaultVolume.set((getValue(settings, 'audio.defaultVolume', 1) as number) * 100);
       this.systemLightTheme.set(
         this.normalizeTheme(getValue(settings, 'theme.systemLightTheme', 'white'), 'white')
       );
@@ -619,7 +784,8 @@ export class SettingsComponent implements OnInit, OnDestroy {
       this.defaultBackgroundColor.set(
         getValue(settings, 'canvas.defaultBackgroundColor', '#ffffff') as string
       );
-      this.defaultTool.set(getValue(settings, 'canvas.defaultTool', 'pencil') as string);
+      const defaultTool = getValue(settings, 'canvas.defaultTool', 'pencil') as string;
+      this.defaultTool.set(AVAILABLE_TOOLS.some((tool) => tool.id === defaultTool) ? defaultTool : 'pencil');
       this.showClearCanvasWarning.set(
         getValue(settings, 'canvas.showClearCanvasWarning', true) as boolean
       );
@@ -639,6 +805,14 @@ export class SettingsComponent implements OnInit, OnDestroy {
       this.onionFramesForward.set(getValue(settings, 'onionSkin.framesForward', 1) as number);
       this.onionPrevColor.set(getValue(settings, 'onionSkin.prevColor', '#ff00ff') as string);
       this.onionNextColor.set(getValue(settings, 'onionSkin.nextColor', '#00b3ff') as string);
+      this.pencilSize.set(getValue(settings, 'tools.pencil.size', 5) as number);
+      this.brushSize.set(getValue(settings, 'tools.brush.size', 5) as number);
+      this.brushSpacing.set(getValue(settings, 'tools.brush.spacing', 45) as number);
+      this.eraserSize.set(getValue(settings, 'tools.eraser.size', 5) as number);
+      this.rectangleSize.set(getValue(settings, 'tools.rectangle.size', 5) as number);
+      this.circleSize.set(getValue(settings, 'tools.circle.size', 5) as number);
+      this.polygonSize.set(getValue(settings, 'tools.polygon.size', 5) as number);
+      this.bucketFillTolerance.set(getValue(settings, 'tools.bucketFill.tolerance', 16) as number);
     } catch (err) {
       console.error('Failed to load fresh settings:', err);
       // Fall back to default values already set in signal initialization
@@ -734,5 +908,23 @@ export class SettingsComponent implements OnInit, OnDestroy {
     if (input) {
       input.value = String(clampedValue);
     }
+  }
+
+  // Toggle collapse state for a section
+  toggleSection(sectionId: string): void {
+    this.collapsedSections.update((collapsed) => {
+      const newSet = new Set(collapsed);
+      if (newSet.has(sectionId)) {
+        newSet.delete(sectionId);
+      } else {
+        newSet.add(sectionId);
+      }
+      return newSet;
+    });
+  }
+
+  // Check if a section is collapsed
+  isSectionCollapsed(sectionId: string): boolean {
+    return this.collapsedSections().has(sectionId);
   }
 }

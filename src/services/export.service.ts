@@ -129,7 +129,7 @@ export class ExportService {
         } else {
           lc.repaintLayer('main');
         }
-        lc.setColor('background', backgroundColor ?? appSettings.board.defaultBackgroundColor);
+        lc.setColor('background', backgroundColor ?? appSettings.canvas.defaultBackgroundColor);
         const dataUrl = lc.getImage({ scale }).toDataURL(mimeType, 0.9);
         resolve(dataUrl);
       } catch {
@@ -139,7 +139,7 @@ export class ExportService {
         canvas.height = Math.round(this.store.height() * scale);
         const ctx = canvas.getContext('2d');
         if (ctx) {
-          ctx.fillStyle = backgroundColor ?? appSettings.board.defaultBackgroundColor;
+          ctx.fillStyle = backgroundColor ?? appSettings.canvas.defaultBackgroundColor;
           ctx.fillRect(0, 0, canvas.width, canvas.height);
         }
         resolve(canvas.toDataURL(mimeType, 0.9));

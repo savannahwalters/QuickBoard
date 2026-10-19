@@ -13,9 +13,38 @@
     </header>
 
     <div class="settings-content">
-      <!-- Saving Section -->
+      <!-- Special handling for Saving Section (has folder picker) -->
       <section class="settings-section">
-        <h4 class="section-title">Saving</h4>
+        <div class="section-header">
+          <h4 class="section-title">Saving</h4>
+          <button
+            type="button"
+            class="collapse-button"
+            [class.collapsed]="isSectionCollapsed('saving')"
+            (click)="toggleSection('saving')"
+            [attr.aria-label]="
+              isSectionCollapsed('saving') ? 'Expand Saving section' : 'Collapse Saving section'
+            "
+            [attr.aria-expanded]="!isSectionCollapsed('saving')"
+          >
+            <svg
+              width="12"
+              height="12"
+              viewBox="0 0 12 12"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <path
+                d="M2 4L6 8L10 4"
+                stroke="currentColor"
+                stroke-width="1.5"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+            </svg>
+          </button>
+        </div>
+        @if (!isSectionCollapsed('saving')) {
         <div class="settings-grid saving-grid">
           <div class="field location-field field-full">
             <label for="initial-dir" class="field-label">Default Save Location</label>
@@ -91,13 +120,60 @@
           </div>
           }
         </div>
+        }
       </section>
 
-      <!-- Export Defaults Section -->
+      <!-- All other sections rendered generically -->
+      @for (section of sections; track section.id) { @if (section.id !== 'saving') {
       <section class="settings-section">
-        <h4 class="section-title">Export Defaults</h4>
-        <div class="settings-grid">
-          @for (field of exportSelectFields; track field.id) {
+        <div class="section-header">
+          <h4 class="section-title">{{ section.title }}</h4>
+          <button
+            type="button"
+            class="collapse-button"
+            [class.collapsed]="isSectionCollapsed(section.id)"
+            (click)="toggleSection(section.id)"
+            [attr.aria-label]="
+              isSectionCollapsed(section.id)
+                ? 'Expand ' + section.title + ' section'
+                : 'Collapse ' + section.title + ' section'
+            "
+            [attr.aria-expanded]="!isSectionCollapsed(section.id)"
+          >
+            <svg
+              width="12"
+              height="12"
+              viewBox="0 0 12 12"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <path
+                d="M2 4L6 8L10 4"
+                stroke="currentColor"
+                stroke-width="1.5"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+            </svg>
+          </button>
+        </div>
+        @if (!isSectionCollapsed(section.id)) {
+        <div [class]="section.gridClass ? 'settings-grid ' + section.gridClass : 'settings-grid'">
+          <!-- Color Fields -->
+          @if (section.colorFields) { @for (field of section.colorFields; track field.id) {
+          <div [class]="field.fieldClass ? 'field ' + field.fieldClass : 'field'">
+            <label [for]="field.id" class="field-label">{{ field.label }}</label>
+            <app-color-picker
+              [id]="field.id"
+              class="color-input"
+              [label]="field.label"
+              [color]="field.value()"
+              (colorChange)="field.value.set($event)"
+            ></app-color-picker>
+          </div>
+          } }
+          <!-- Select Fields -->
+          @if (section.selectFields) { @for (field of section.selectFields; track field.id) {
           <div class="field">
             <label [for]="field.id" class="field-label">{{ field.label }}</label>
             @if (field.useNgModel) {
@@ -128,15 +204,9 @@
             </select>
             }
           </div>
-          }
-        </div>
-      </section>
-
-      <!-- Audio Section -->
-      <section class="settings-section">
-        <h4 class="section-title">Audio</h4>
-        <div class="settings-grid">
-          @for (field of audioNumberFields; track field.id) {
+          } }
+          <!-- Number Fields -->
+          @if (section.numberFields) { @for (field of section.numberFields; track field.id) {
           <div class="field">
             <label [for]="field.id" class="field-label">{{ field.label }}</label>
             @if (field.unit && field.groupClass) {
@@ -147,10 +217,16 @@
                 class="number-input"
                 [value]="field.value()"
                 (change)="setNumberSignalFromInput($event, field.value, field.min, field.max)"
+                [disabled]="field.disabled ? field.disabled() : false"
                 [attr.min]="field.min ?? null"
                 [attr.max]="field.max ?? null"
               />
-              <span class="unit-label">{{ field.unit }}</span>
+              <span
+                class="unit-label"
+                [class.is-disabled]="field.disabled ? field.disabled() : false"
+              >
+                {{ field.unit }}
+              </span>
             </div>
             } @else {
             <input
@@ -159,89 +235,25 @@
               class="number-input"
               [value]="field.value()"
               (change)="setNumberSignalFromInput($event, field.value, field.min, field.max)"
+              [disabled]="field.disabled ? field.disabled() : false"
               [attr.min]="field.min ?? null"
               [attr.max]="field.max ?? null"
             />
             }
           </div>
-          }
-        </div>
-      </section>
-
-      <!-- Themes Section -->
-      <section class="settings-section">
-        <h4 class="section-title">Themes</h4>
-        <div class="settings-grid">
-          @for (field of themeSelectFields; track field.id) {
+          } }
+          <!-- Checkbox Fields -->
+          @if (section.checkboxFields) { @for (field of section.checkboxFields; track field.id) {
           <div class="field">
             <label [for]="field.id" class="field-label">{{ field.label }}</label>
-            @if (field.useNgModel) {
-            <select
-              [id]="field.id"
-              class="select-input"
-              [ngModel]="field.value()"
-              (ngModelChange)="setStringSignalFromModel($event, field.value)"
+            <div
+              class="checkbox-label"
+              [class]="
+                field.checkboxLabelClass
+                  ? 'checkbox-label ' + field.checkboxLabelClass
+                  : 'checkbox-label'
+              "
             >
-              @for (option of field.options; track option.id) {
-              <option [value]="option.id">
-                {{ option.label }}
-              </option>
-              }
-            </select>
-            } @else {
-            <select
-              [id]="field.id"
-              class="select-input"
-              [value]="field.value()"
-              (change)="setStringSignalFromInput($event, field.value)"
-            >
-              @for (option of field.options; track option.id) {
-              <option [value]="option.id">
-                {{ option.label }}
-              </option>
-              }
-            </select>
-            }
-          </div>
-          }
-        </div>
-      </section>
-
-      <!-- Canvas Defaults Section -->
-      <section class="settings-section">
-        <h4 class="section-title">Canvas Defaults</h4>
-        <div class="settings-grid canvas-grid">
-          @for (field of canvasColorFields; track field.id) {
-          <div [class]="field.fieldClass ? 'field ' + field.fieldClass : 'field'">
-            <label [for]="field.id" class="field-label">{{ field.label }}</label>
-            <app-color-picker
-              [id]="field.id"
-              class="color-input"
-              [label]="field.label"
-              [color]="field.value()"
-              (colorChange)="field.value.set($event)"
-            ></app-color-picker>
-          </div>
-          } @for (field of canvasSelectFields; track field.id) {
-          <div class="field">
-            <label [for]="field.id" class="field-label">{{ field.label }}</label>
-            <select
-              [id]="field.id"
-              class="select-input"
-              [value]="field.value()"
-              (change)="setStringSignalFromInput($event, field.value)"
-            >
-              @for (option of field.options; track option.id) {
-              <option [value]="option.id">
-                {{ option.label }}
-              </option>
-              }
-            </select>
-          </div>
-          } @for (field of canvasCheckboxFields; track field.id) {
-          <div class="field">
-            <label [for]="field.id" class="field-label">{{ field.label }}</label>
-            <div class="checkbox-label">
               <input
                 [id]="field.id"
                 type="checkbox"
@@ -252,97 +264,34 @@
               <span class="checkbox-text">{{ field.value() ? 'ON' : 'OFF' }}</span>
             </div>
           </div>
-          }
-        </div>
-      </section>
-
-      <!-- Line Boiling Section -->
-      <section class="settings-section">
-        <h4 class="section-title">Line Boiling Defaults</h4>
-        <div class="settings-grid">
-          @for (field of boilNumberFields; track field.id) {
-          <div class="field">
-            <label [for]="field.id" class="field-label">{{ field.label }}</label>
-            <input
-              [id]="field.id"
-              type="number"
-              class="number-input"
-              [value]="field.value()"
-              (change)="setNumberSignalFromInput($event, field.value, field.min, field.max)"
-              [attr.min]="field.min ?? null"
-              [attr.max]="field.max ?? null"
-            />
-          </div>
-          } @for (field of boilCheckboxFields; track field.id) {
-          <div class="field">
-            <label [for]="field.id" class="field-label">{{ field.label }}</label>
-            <div class="checkbox-label">
-              <input
-                [id]="field.id"
-                type="checkbox"
-                class="checkbox"
-                [checked]="field.value()"
-                (change)="setBooleanSignalFromInput($event, field.value)"
-              />
-              <span class="checkbox-text">{{ field.value() ? 'ON' : 'OFF' }}</span>
+          } }
+          <!-- Tool Fields (each tool is a box with one or more properties) -->
+          @if (section.toolFields) { @for (tool of section.toolFields; track tool.id) {
+          <div class="field tool-field" [class.tool-field-wide]="tool.properties.length > 1">
+            <span class="field-label">{{ tool.label }}</span>
+            <div class="tool-props">
+              @for (prop of tool.properties; track prop.id) {
+              <div class="tool-prop">
+                <label [for]="prop.id" class="tool-prop-label">{{ prop.label }}</label>
+                <input
+                  [id]="prop.id"
+                  [attr.aria-label]="tool.label + ' ' + prop.label"
+                  type="number"
+                  class="number-input"
+                  [value]="prop.value()"
+                  (change)="setNumberSignalFromInput($event, prop.value, prop.min, prop.max)"
+                  [attr.min]="prop.min ?? null"
+                  [attr.max]="prop.max ?? null"
+                />
+              </div>
+              }
             </div>
           </div>
-          }
+          } }
         </div>
+        }
       </section>
-
-      <!-- Onion Skin Section -->
-      <section class="settings-section">
-        <h4 class="section-title">Onion Skin Defaults</h4>
-        <div class="settings-grid">
-          @for (field of onionNumberFields; track field.id) {
-          <div class="field">
-            <label [for]="field.id" class="field-label">{{ field.label }}</label>
-            <input
-              [id]="field.id"
-              type="number"
-              class="number-input"
-              [value]="field.value()"
-              (change)="setNumberSignalFromInput($event, field.value, field.min, field.max)"
-              [attr.min]="field.min ?? null"
-              [attr.max]="field.max ?? null"
-            />
-          </div>
-          } @for (field of onionColorFields; track field.id) {
-          <div [class]="field.fieldClass ? 'field ' + field.fieldClass : 'field'">
-            <label [for]="field.id" class="field-label">{{ field.label }}</label>
-            <app-color-picker
-              [id]="field.id"
-              class="color-input"
-              [label]="field.label"
-              [color]="field.value()"
-              (colorChange)="field.value.set($event)"
-            ></app-color-picker>
-          </div>
-          }
-        </div>
-      </section>
-
-      <!-- Timeline Section -->
-      <section class="settings-section">
-        <h4 class="section-title">Timeline (Experimental)</h4>
-        <div class="settings-grid">
-          @for (field of timelineNumberFields; track field.id) {
-          <div class="field">
-            <label [for]="field.id" class="field-label">{{ field.label }}</label>
-            <input
-              [id]="field.id"
-              type="number"
-              class="number-input"
-              [value]="field.value()"
-              (change)="setNumberSignalFromInput($event, field.value, field.min, field.max)"
-              [attr.min]="field.min ?? null"
-              [attr.max]="field.max ?? null"
-            />
-          </div>
-          }
-        </div>
-      </section>
+      } }
     </div>
 
     <!-- Restore Defaults Button -->
