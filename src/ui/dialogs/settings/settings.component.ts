@@ -29,7 +29,7 @@ const AVAILABLE_TOOLS = [
   { id: 'eraser', label: 'Eraser' },
   { id: 'object-eraser', label: 'Object Eraser' },
   { id: 'select', label: 'Select' },
-  { id: 'image', label: 'Image' },
+  { id: 'zoom', label: 'Zoom' },
 ];
 
 // Theme options for user-selectable concrete themes (system is chosen separately)
@@ -245,9 +245,6 @@ export class SettingsComponent implements OnInit, OnDestroy {
     this.getSafeSettingValue('tools.brush.spacing', 45) as number
   );
   readonly eraserSize = signal<number>(this.getSafeSettingValue('tools.eraser.size', 5) as number);
-  readonly objectEraserSize = signal<number>(
-    this.getSafeSettingValue('tools.objectEraser.size', 20) as number
-  );
   readonly rectangleSize = signal<number>(
     this.getSafeSettingValue('tools.rectangle.size', 5) as number
   );
@@ -495,19 +492,6 @@ export class SettingsComponent implements OnInit, OnDestroy {
       properties: [{ id: 'eraser-size', label: 'Size', value: this.eraserSize, min: 1, max: 500 }],
     },
     {
-      id: 'tool-object-eraser',
-      label: 'Object Eraser',
-      properties: [
-        {
-          id: 'object-eraser-size',
-          label: 'Size',
-          value: this.objectEraserSize,
-          min: 1,
-          max: 100,
-        },
-      ],
-    },
-    {
       id: 'tool-rectangle',
       label: 'Rectangle',
       properties: [
@@ -736,7 +720,6 @@ export class SettingsComponent implements OnInit, OnDestroy {
         pencil: { size: this.pencilSize() },
         brush: { size: this.brushSize(), spacing: this.brushSpacing() },
         eraser: { size: this.eraserSize() },
-        objectEraser: { size: this.objectEraserSize() },
         rectangle: { size: this.rectangleSize() },
         circle: { size: this.circleSize() },
         polygon: { size: this.polygonSize() },
@@ -790,7 +773,7 @@ export class SettingsComponent implements OnInit, OnDestroy {
       this.savedToast.set(resolvedSavedToast);
       this.initialSave.set(resolvedInitialSave);
       this.defaultLaneCount.set(getValue(settings, 'audio.defaultLaneCount', 1) as number);
-      this.defaultVolume.set(((getValue(settings, 'audio.defaultVolume', 1) as number) || 1) * 100);
+      this.defaultVolume.set((getValue(settings, 'audio.defaultVolume', 1) as number) * 100);
       this.systemLightTheme.set(
         this.normalizeTheme(getValue(settings, 'theme.systemLightTheme', 'white'), 'white')
       );
@@ -804,7 +787,8 @@ export class SettingsComponent implements OnInit, OnDestroy {
       this.defaultBackgroundColor.set(
         getValue(settings, 'canvas.defaultBackgroundColor', '#ffffff') as string
       );
-      this.defaultTool.set(getValue(settings, 'canvas.defaultTool', 'pencil') as string);
+      const defaultTool = getValue(settings, 'canvas.defaultTool', 'pencil') as string;
+      this.defaultTool.set(AVAILABLE_TOOLS.some((tool) => tool.id === defaultTool) ? defaultTool : 'pencil');
       this.showClearCanvasWarning.set(
         getValue(settings, 'canvas.showClearCanvasWarning', true) as boolean
       );
@@ -828,7 +812,6 @@ export class SettingsComponent implements OnInit, OnDestroy {
       this.brushSize.set(getValue(settings, 'tools.brush.size', 5) as number);
       this.brushSpacing.set(getValue(settings, 'tools.brush.spacing', 45) as number);
       this.eraserSize.set(getValue(settings, 'tools.eraser.size', 5) as number);
-      this.objectEraserSize.set(getValue(settings, 'tools.objectEraser.size', 20) as number);
       this.rectangleSize.set(getValue(settings, 'tools.rectangle.size', 5) as number);
       this.circleSize.set(getValue(settings, 'tools.circle.size', 5) as number);
       this.polygonSize.set(getValue(settings, 'tools.polygon.size', 5) as number);

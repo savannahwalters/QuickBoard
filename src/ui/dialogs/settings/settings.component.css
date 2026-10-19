@@ -242,13 +242,19 @@ app-color-picker.color-input {
   grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
 }
 
+.tool-field-wide {
+  grid-column: span 2;
+}
+
 .tool-props {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
   gap: 8px;
 }
 
 .tool-prop {
+  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -517,4 +523,14 @@ app-color-picker.color-input {
 
 .dialog::-webkit-scrollbar-thumb:hover {
   background: color-mix(in srgb, var(--border-default) 80%, transparent);
+}
+
+@media (max-width: 380px) {
+  .tools-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .tool-field-wide {
+    grid-column: auto;
+  }
 }

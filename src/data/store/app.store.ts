@@ -60,7 +60,7 @@ const initialState: AppState = {
       id: firstBoardId,
       scriptData: null,
       previewUrl: null,
-      backgroundColor: appSettings.board.defaultBackgroundColor,
+      backgroundColor: appSettings.canvas.defaultBackgroundColor,
       duration: appSettings.board.defaultDuration,
     },
   ],
@@ -93,7 +93,7 @@ export const AppStore = signalStore(
       addBoard() {
         const currentBoard = store.boards().find((board) => board.id === store.currentBoardId());
         const backgroundColor =
-          currentBoard?.backgroundColor ?? appSettings.board.defaultBackgroundColor;
+          currentBoard?.backgroundColor ?? appSettings.canvas.defaultBackgroundColor;
         const duration = currentBoard?.duration ?? appSettings.board.defaultDuration;
         const newBoard: Board = {
           id: crypto.randomUUID(),

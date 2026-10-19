@@ -267,7 +267,7 @@
           } }
           <!-- Tool Fields (each tool is a box with one or more properties) -->
           @if (section.toolFields) { @for (tool of section.toolFields; track tool.id) {
-          <div class="field tool-field">
+          <div class="field tool-field" [class.tool-field-wide]="tool.properties.length > 1">
             <span class="field-label">{{ tool.label }}</span>
             <div class="tool-props">
               @for (prop of tool.properties; track prop.id) {
