@@ -11,6 +11,13 @@ import {
   untracked,
   viewChild,
 } from '@angular/core';
+import {
+  CircularColorSelectorComponent,
+  SelectorChange,
+} from './circular-color-selector.component';
+import { hsvToRgb } from './color-picker-geometry';
+
+type PickerMode = 'square' | 'triangle' | 'wheel' | 'sliders';
 
 interface Rgba {
   r: number;
@@ -26,14 +33,12 @@ interface Hsv {
 }
 
 const HUE_GRADIENT =
-  'linear-gradient(to right in oklch, #ff0000, #ffff00, #00ff00, #00ffff, #0000ff, #ff00ff, #ff0000)';
-const ALPHA_GRADIENT =
-  'linear-gradient(to right, rgba(0, 0, 0, 0), rgba(0, 0, 0, 1))';
-const VALUE_CURVE = 0.7;
+  'linear-gradient(to right, #ff0000, #ffff00, #00ff00, #00ffff, #0000ff, #ff00ff, #ff0000)';
 let colorPickerId = 0;
 
 @Component({
   selector: 'app-color-picker',
+  imports: [CircularColorSelectorComponent],
   templateUrl: './color-picker.component.html',
   styleUrls: ['./color-picker.component.css'],
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -41,6 +46,7 @@ let colorPickerId = 0;
     class: 'color-picker-host',
     '(document:click)': 'onDocumentClick($event)',
     '(document:keydown)': 'onDocumentKeydown($event)',
+    '(window:resize)': 'onWindowResize()',
   },
 })
 export class ColorPickerComponent {
@@ -49,7 +55,15 @@ export class ColorPickerComponent {
   readonly colorChange = output<string>();
 
   readonly isOpen = signal(false);
-  readonly panelAlignment = signal<'left' | 'right'>('right');
+  readonly mode = signal<PickerMode>('triangle');
+  readonly modes: { id: PickerMode; name: string; icon: string }[] = [
+    { id: 'square', name: 'HSV Square', icon: 'fa-square' },
+    { id: 'triangle', name: 'HSV Triangle', icon: 'fa-play' },
+    { id: 'wheel', name: 'HSV Wheel', icon: 'fa-circle' },
+    { id: 'sliders', name: 'HSV Sliders', icon: 'fa-sliders' },
+  ];
+  readonly panelLeft = signal(8);
+  readonly panelTop = signal(8);
   readonly hue = signal(0);
   readonly saturation = signal(1);
   readonly value = signal(1);
@@ -62,6 +76,9 @@ export class ColorPickerComponent {
   readonly alphaId = `color-picker-alpha-${colorPickerId}`;
   readonly panelId = `color-picker-panel-${colorPickerId}`;
   readonly hexId = `color-picker-hex-${colorPickerId}`;
+  readonly saturationId = `color-picker-saturation-${colorPickerId}`;
+  readonly valueId = `color-picker-value-${colorPickerId}`;
+  readonly modePanelId = `color-picker-mode-${colorPickerId}`;
 
   readonly svArea = viewChild<ElementRef<HTMLElement>>('svArea');
 
@@ -82,7 +99,19 @@ export class ColorPickerComponent {
     return formatRgba(rgb, this.alpha());
   });
 
-  readonly alphaGradient = computed(() => ALPHA_GRADIENT);
+  readonly alphaGradient = computed(() => {
+    const rgb = hsvToRgb(this.hue(), this.saturation(), this.value());
+    return `linear-gradient(to right, rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0), rgb(${rgb.r}, ${rgb.g}, ${rgb.b}))`;
+  });
+  readonly saturationGradient = computed(() => {
+    const start = rgbToHex(hsvToRgb(this.hue(), 0, this.value()));
+    const end = rgbToHex(hsvToRgb(this.hue(), 1, this.value()));
+    return `linear-gradient(to right, ${start}, ${end})`;
+  });
+  readonly valueGradient = computed(
+    () =>
+      `linear-gradient(to right, #000000, ${rgbToHex(hsvToRgb(this.hue(), this.saturation(), 1))})`
+  );
   readonly hexValue = computed(() => {
     const rgb = hsvToRgb(this.hue(), this.saturation(), this.value());
     return rgbToHex(rgb);
@@ -93,8 +122,7 @@ export class ColorPickerComponent {
   readonly saturationPercentValue = computed(() => Math.round(this.saturation() * 100));
   readonly brightnessPercentValue = computed(() => Math.round(this.value() * 100));
   readonly valueHandlePercent = computed(() => {
-    const curved = invertValueCurve(this.value());
-    return (1 - curved) * 100;
+    return (1 - this.value()) * 100;
   });
   readonly svValueText = computed(() => {
     return `Saturation ${this.saturationPercentValue()} percent, Brightness ${this.brightnessPercentValue()} percent`;
@@ -136,28 +164,27 @@ export class ColorPickerComponent {
 
   toggleOpen(): void {
     if (!this.isOpen()) {
-      this.updatePanelAlignment();
+      this.updatePanelPosition();
     }
     this.isOpen.set(!this.isOpen());
   }
 
-  private updatePanelAlignment(): void {
+  onWindowResize(): void {
+    if (this.isOpen()) this.updatePanelPosition();
+  }
+
+  private updatePanelPosition(): void {
     const trigger = this.host.nativeElement;
     const rect = trigger.getBoundingClientRect();
-    const windowWidth = window.innerWidth;
-    const estimatedPanelWidth = 210;
-
-    const spaceLeft = rect.right;
-    const spaceRight = windowWidth - rect.left;
-
-    if (spaceLeft >= estimatedPanelWidth && spaceRight < estimatedPanelWidth) {
-      this.panelAlignment.set('right'); // Align right (expands to the left)
-    } else if (spaceRight >= estimatedPanelWidth && spaceLeft < estimatedPanelWidth) {
-      this.panelAlignment.set('left'); // Align left (expands to the right)
-    } else {
-      // If both fit or neither fit perfectly, default to the one with more space
-      this.panelAlignment.set(spaceLeft > spaceRight ? 'right' : 'left');
-    }
+    const panelWidth = Math.min(240, window.innerWidth - 24);
+    const panelHeight = Math.min(400, window.innerHeight - 16);
+    this.panelLeft.set(clamp(rect.right - panelWidth, 8, window.innerWidth - panelWidth - 8));
+    const below = rect.bottom + 6;
+    this.panelTop.set(
+      below + panelHeight <= window.innerHeight - 8
+        ? below
+        : Math.max(8, rect.top - panelHeight - 6)
+    );
   }
 
   onDocumentClick(event: MouseEvent): void {
@@ -171,12 +198,44 @@ export class ColorPickerComponent {
     }
   }
 
+  selectMode(mode: PickerMode): void {
+    this.isDragging.set(false);
+    this.activePointerId.set(null);
+    this.mode.set(mode);
+  }
+
+  onTabKeydown(event: KeyboardEvent, index: number): void {
+    let next = index;
+    if (event.key === 'ArrowRight') next = (index + 1) % this.modes.length;
+    else if (event.key === 'ArrowLeft') next = (index + this.modes.length - 1) % this.modes.length;
+    else if (event.key === 'Home') next = 0;
+    else if (event.key === 'End') next = this.modes.length - 1;
+    else return;
+    event.preventDefault();
+    event.stopPropagation();
+    this.selectMode(this.modes[next].id);
+    this.host.nativeElement.querySelectorAll<HTMLButtonElement>('[role="tab"]')[next]?.focus();
+  }
+
+  onSelectionChange(change: SelectorChange): void {
+    if (change.h !== undefined) this.hue.set(change.h);
+    if (change.s !== undefined) this.saturation.set(change.s);
+    if (change.v !== undefined) this.value.set(change.v);
+    this.emitColor();
+  }
+
+  onChannelInput(event: Event, channel: 's' | 'v'): void {
+    const target = event.target as HTMLInputElement;
+    this.onSelectionChange({ [channel]: clamp01(target.valueAsNumber / 100) });
+  }
+
   onDocumentKeydown(event: KeyboardEvent): void {
     if (!this.isOpen()) return;
     if (event.key === 'Escape') {
       this.isOpen.set(false);
       this.isDragging.set(false);
       this.activePointerId.set(null);
+      this.host.nativeElement.querySelector<HTMLButtonElement>('.color-trigger')?.focus();
       event.stopPropagation();
     }
   }
@@ -213,7 +272,12 @@ export class ColorPickerComponent {
     if (event.key === 'ArrowUp') v += step;
     if (event.key === 'ArrowDown') v -= step;
 
-    if (event.key === 'ArrowLeft' || event.key === 'ArrowRight' || event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+    if (
+      event.key === 'ArrowLeft' ||
+      event.key === 'ArrowRight' ||
+      event.key === 'ArrowUp' ||
+      event.key === 'ArrowDown'
+    ) {
       event.preventDefault();
       this.saturation.set(clamp01(s));
       this.value.set(clamp01(v));
@@ -300,7 +364,7 @@ export class ColorPickerComponent {
     const x = clamp((event.clientX - rect.left) / rect.width, 0, 1);
     const y = clamp((event.clientY - rect.top) / rect.height, 0, 1);
     this.saturation.set(x);
-    this.value.set(applyValueCurve(1 - y));
+    this.value.set(1 - y);
     this.emitColor();
   }
 
@@ -331,14 +395,6 @@ function clamp(value: number, min: number, max: number): number {
 
 function clamp01(value: number): number {
   return clamp(value, 0, 1);
-}
-
-function applyValueCurve(value: number): number {
-  return Math.pow(clamp01(value), VALUE_CURVE);
-}
-
-function invertValueCurve(value: number): number {
-  return Math.pow(clamp01(value), 1 / VALUE_CURVE);
 }
 
 function parseColor(value: string): Rgba | null {
@@ -419,50 +475,13 @@ function rgbToHsv(rgba: Rgba): Hsv {
     } else {
       h = (r - g) / delta + 4;
     }
-    h = Math.round(h * 60);
+    h *= 60;
     if (h < 0) h += 360;
   }
 
   const s = max === 0 ? 0 : delta / max;
   const v = max;
   return { h, s, v };
-}
-
-function hsvToRgb(h: number, s: number, v: number): { r: number; g: number; b: number } {
-  const hue = ((h % 360) + 360) % 360;
-  const c = v * s;
-  const x = c * (1 - Math.abs(((hue / 60) % 2) - 1));
-  const m = v - c;
-
-  let r1 = 0;
-  let g1 = 0;
-  let b1 = 0;
-
-  if (hue < 60) {
-    r1 = c;
-    g1 = x;
-  } else if (hue < 120) {
-    r1 = x;
-    g1 = c;
-  } else if (hue < 180) {
-    g1 = c;
-    b1 = x;
-  } else if (hue < 240) {
-    g1 = x;
-    b1 = c;
-  } else if (hue < 300) {
-    r1 = x;
-    b1 = c;
-  } else {
-    r1 = c;
-    b1 = x;
-  }
-
-  return {
-    r: Math.round((r1 + m) * 255),
-    g: Math.round((g1 + m) * 255),
-    b: Math.round((b1 + m) * 255),
-  };
 }
 
 function formatRgba(rgb: { r: number; g: number; b: number }, alpha: number): string {

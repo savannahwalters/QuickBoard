@@ -15,111 +15,186 @@
   </button>
 
   @if (isOpen()) {
-    <div
-      class="color-panel"
-      [class.align-left]="panelAlignment() === 'left'"
-      [class.align-right]="panelAlignment() === 'right'"
-      role="dialog"
-      [id]="panelId"
-      [attr.aria-label]="label() + ' color picker'"
-    >
-      <div
-        #svArea
-        class="sv-area"
-        [style.background-image]="svBackground()"
-        (pointerdown)="startSvDrag($event)"
-        (pointermove)="onSvPointerMove($event)"
-        (pointerup)="endSvDrag($event)"
-        (pointercancel)="endSvDrag($event)"
-        (lostpointercapture)="endSvDrag($event)"
-        (keydown)="onSvKeydown($event)"
-        tabindex="0"
-        role="slider"
-        aria-valuemin="0"
-        aria-valuemax="100"
-        [attr.aria-valuenow]="saturationPercentValue()"
-        [attr.aria-valuetext]="svValueText()"
-        [attr.aria-label]="label() + ' saturation and brightness'"
+  <div
+    class="color-panel"
+    [style.left.px]="panelLeft()"
+    [style.top.px]="panelTop()"
+    role="dialog"
+    [id]="panelId"
+    [attr.aria-label]="label() + ' color picker'"
+  >
+    <div class="picker-tabs" role="tablist" aria-label="Color selector layout">
+      @for (option of modes; track option.id; let index = $index) {
+      <button
+        type="button"
+        role="tab"
+        [id]="modePanelId + '-' + option.id"
+        [attr.aria-selected]="mode() === option.id"
+        [attr.aria-controls]="modePanelId"
+        [attr.tabindex]="mode() === option.id ? 0 : -1"
+        [attr.aria-label]="option.name"
+        [title]="option.name"
+        (click)="selectMode(option.id)"
+        (keydown)="onTabKeydown($event, index)"
       >
-        <span
-          class="sv-handle"
-          [style.left.%]="saturation() * 100"
-          [style.top.%]="valueHandlePercent()"
-        ></span>
-      </div>
-
-      <div class="slider-row">
-        <label class="slider-label" [attr.for]="hueId">Hue</label>
-        <input
-          [id]="hueId"
-          type="range"
-          min="0"
-          max="360"
-          step="1"
-          [value]="hue()"
-          (input)="onHueInput($event)"
-          class="color-slider hue-slider"
-          [style.--slider-background]="hueGradient()"
-          [attr.aria-label]="label() + ' hue'"
+        <i [class]="'fa ' + option.icon" aria-hidden="true"></i>
+        <span>{{ option.name }}</span>
+      </button>
+      }
+    </div>
+    <div role="tabpanel" [id]="modePanelId" [attr.aria-labelledby]="modePanelId + '-' + mode()">
+      <div class="selector-body">
+        @if (mode() === 'square') {
+        <div
+          #svArea
+          class="sv-area"
+          [style.background-image]="svBackground()"
+          (pointerdown)="startSvDrag($event)"
+          (pointermove)="onSvPointerMove($event)"
+          (pointerup)="endSvDrag($event)"
+          (pointercancel)="endSvDrag($event)"
+          (lostpointercapture)="endSvDrag($event)"
+          (keydown)="onSvKeydown($event)"
+          tabindex="0"
+          role="slider"
+          aria-valuemin="0"
+          aria-valuemax="100"
+          [attr.aria-valuenow]="saturationPercentValue()"
+          [attr.aria-valuetext]="svValueText()"
+          [attr.aria-label]="label() + ' saturation and brightness'"
         >
-      </div>
-
-      <div class="slider-row">
-        <label class="slider-label" [attr.for]="alphaId">Alpha</label>
-        <input
-          [id]="alphaId"
-          type="range"
-          min="0"
-          max="100"
-          step="1"
-          [value]="alphaPercentValue()"
-          (input)="onAlphaInput($event)"
-          class="color-slider alpha-slider"
-          [style.--slider-background]="alphaGradient()"
-          [attr.aria-label]="label() + ' transparency'"
-        >
-      </div>
-
-      <div class="preview-row">
-        <div class="preview-group">
-          <div
-            class="preview-swatch"
-            [class.transparent-checker]="isTransparent()"
-            [style.background-color]="displayColor()"
-          ></div>
-          <div class="alpha-input-group">
-            <input
-              type="number"
-              min="0"
-              max="100"
-              step="1"
-              class="alpha-input"
-              [value]="alphaText()"
-              (input)="onAlphaTextInput($event)"
-              (focus)="onAlphaFocus()"
-              (blur)="onAlphaBlur()"
-              [attr.aria-label]="label() + ' alpha percent'"
-            >
-            <span class="alpha-suffix">%</span>
-          </div>
+          <span
+            class="sv-handle"
+            [style.left.%]="saturation() * 100"
+            [style.top.%]="valueHandlePercent()"
+          ></span>
         </div>
-        <div class="hex-group">
-          <label class="hex-label" [attr.for]="hexId">Hex</label>
+        } @else if (mode() === 'triangle' || mode() === 'wheel') {
+        <app-circular-color-selector
+          [mode]="mode() === 'triangle' ? 'triangle' : 'wheel'"
+          [label]="label()"
+          [hue]="hue()"
+          [saturation]="saturation()"
+          [value]="value()"
+          (selectionChange)="onSelectionChange($event)"
+        />
+        } @if (mode() !== 'wheel') {
+        <div class="slider-row">
+          <label class="slider-label" [attr.for]="hueId">Hue</label>
           <input
-            [id]="hexId"
-            type="text"
-            class="hex-input"
-            [value]="hexText()"
-            (input)="onHexInput($event)"
-            (focus)="onHexFocus()"
-            (blur)="onHexBlur()"
-            spellcheck="false"
-            autocomplete="off"
-            autocapitalize="characters"
-            [attr.aria-label]="label() + ' hex color'"
+            [id]="hueId"
+            type="range"
+            min="0"
+            max="360"
+            step="1"
+            [value]="hue()"
+            (input)="onHueInput($event)"
+            class="color-slider hue-slider"
+            [style.--slider-background]="hueGradient()"
+            [attr.aria-label]="label() + ' hue'"
+          />
+          @if (mode() === 'sliders') {
+          <output class="channel-value" [attr.for]="hueId">{{ hue().toFixed(0) }}&deg;</output>
+          }
+        </div>
+        } @if (mode() === 'sliders') {
+        <div class="slider-row">
+          <label class="slider-label" [attr.for]="saturationId">Saturation</label>
+          <input
+            [id]="saturationId"
+            type="range"
+            min="0"
+            max="100"
+            step="1"
+            [value]="saturationPercentValue()"
+            (input)="onChannelInput($event, 's')"
+            class="color-slider"
+            [style.--slider-background]="saturationGradient()"
+            [attr.aria-label]="label() + ' saturation'"
+          />
+          <output class="channel-value" [attr.for]="saturationId"
+            >{{ saturationPercentValue() }}%</output
           >
         </div>
+        } @if (mode() === 'sliders' || mode() === 'wheel') {
+        <div class="slider-row">
+          <label class="slider-label" [attr.for]="valueId">Value</label>
+          <input
+            [id]="valueId"
+            type="range"
+            min="0"
+            max="100"
+            step="1"
+            [value]="brightnessPercentValue()"
+            (input)="onChannelInput($event, 'v')"
+            class="color-slider"
+            [style.--slider-background]="valueGradient()"
+            [attr.aria-label]="label() + ' value'"
+          />
+          <output class="channel-value" [attr.for]="valueId"
+            >{{ brightnessPercentValue() }}%</output
+          >
+        </div>
+        }
       </div>
     </div>
+
+    <div class="slider-row">
+      <label class="slider-label" [attr.for]="alphaId">Alpha</label>
+      <input
+        [id]="alphaId"
+        type="range"
+        min="0"
+        max="100"
+        step="1"
+        [value]="alphaPercentValue()"
+        (input)="onAlphaInput($event)"
+        class="color-slider alpha-slider"
+        [style.--slider-background]="alphaGradient()"
+        [attr.aria-label]="label() + ' transparency'"
+      />
+    </div>
+
+    <div class="preview-row">
+      <div class="preview-group">
+        <div
+          class="preview-swatch"
+          [class.transparent-checker]="isTransparent()"
+          [style.background-color]="displayColor()"
+        ></div>
+        <div class="alpha-input-group">
+          <input
+            type="number"
+            min="0"
+            max="100"
+            step="1"
+            class="alpha-input"
+            [value]="alphaText()"
+            (input)="onAlphaTextInput($event)"
+            (focus)="onAlphaFocus()"
+            (blur)="onAlphaBlur()"
+            [attr.aria-label]="label() + ' alpha percent'"
+          />
+          <span class="alpha-suffix">%</span>
+        </div>
+      </div>
+      <div class="hex-group">
+        <label class="hex-label" [attr.for]="hexId">Hex</label>
+        <input
+          [id]="hexId"
+          type="text"
+          class="hex-input"
+          [value]="hexText()"
+          (input)="onHexInput($event)"
+          (focus)="onHexFocus()"
+          (blur)="onHexBlur()"
+          spellcheck="false"
+          autocomplete="off"
+          autocapitalize="characters"
+          [attr.aria-label]="label() + ' hex color'"
+        />
+      </div>
+    </div>
+  </div>
   }
 </div>
