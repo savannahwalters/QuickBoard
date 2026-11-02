@@ -8,7 +8,7 @@ import {
   signal,
 } from '@angular/core';
 import { inject } from '@angular/core';
-import { EXPORT_RESOLUTIONS, PDF_PAGE_SIZES } from './export-resolutions';
+import { getExportResolutions, PDF_PAGE_SIZES } from './export-resolutions';
 import type { ExportSettings } from './export-resolutions';
 import type { PdfPageSize, PdfScriptMode } from './export-resolutions';
 import { PlatformFileService, IOS_DEFAULT_FOLDER } from '../../services/platform-file.service';
@@ -31,7 +31,7 @@ export class ExportSettingsComponent {
   confirmExport = output<ExportSettings>();
   cancelExport = output<void>();
 
-  protected readonly resolutions = EXPORT_RESOLUTIONS;
+  protected readonly resolutions = getExportResolutions();
   protected readonly pdfPageSizes = PDF_PAGE_SIZES;
   protected selectedIndex = signal(
     Math.max(

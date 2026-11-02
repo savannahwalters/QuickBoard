@@ -1,5 +1,18 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
+const loadDataHandlers = new Set();
+const pendingLoadData = [];
+
+ipcRenderer.on('quickboard:load-data', (_event, payload) => {
+  if (loadDataHandlers.size === 0) {
+    pendingLoadData.push(payload);
+    return;
+  }
+  for (const handler of loadDataHandlers) {
+    handler(payload);
+  }
+});
+
 const validateFilePath = (payload) => {
   if (!payload || typeof payload !== 'object') {
     throw new Error('Invalid payload: must be an object');
@@ -31,9 +44,12 @@ contextBridge.exposeInMainWorld('quickboard', {
     return () => ipcRenderer.removeListener('quickboard:request-save', listener);
   },
   onLoadData: (handler) => {
-    const listener = (_event, payload) => handler(payload);
-    ipcRenderer.on('quickboard:load-data', listener);
-    return () => ipcRenderer.removeListener('quickboard:load-data', listener);
+    loadDataHandlers.add(handler);
+    const pending = pendingLoadData.splice(0);
+    for (const payload of pending) {
+      handler(payload);
+    }
+    return () => loadDataHandlers.delete(handler);
   },
   sendSaveData: (payload) => {
     let filePath;
@@ -143,7 +159,6 @@ contextBridge.exposeInMainWorld('quickboard', {
   },
   getAppSettings: () => ipcRenderer.invoke('quickboard:get-app-settings'),
   saveAppSettings: (settings) => ipcRenderer.invoke('quickboard:save-app-settings', settings),
-  restoreAppSettingsDefaults: () =>
-    ipcRenderer.invoke('quickboard:restore-app-settings-defaults'),
+  restoreAppSettingsDefaults: () => ipcRenderer.invoke('quickboard:restore-app-settings-defaults'),
   selectFolder: () => ipcRenderer.invoke('quickboard:select-folder'),
 });

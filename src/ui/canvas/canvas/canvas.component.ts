@@ -71,19 +71,20 @@ export class CanvasComponent implements AfterViewInit, OnDestroy {
   readonly isZoomKeepOn = this.viewport.zoomKeepOn;
   readonly canvasZoomLevel = this.viewport.zoomLevel;
   private readonly toolSizeMap = signal<Record<string, number>>({
-    pencil: 5,
-    brush: 5,
-    rectangle: 5,
-    circle: 5,
-    polygon: 5,
-    eraser: 5,
+    pencil: appSettings.tools?.pencil?.size ?? 5,
+    brush: appSettings.tools?.brush?.size ?? 5,
+    rectangle: appSettings.tools?.rectangle?.size ?? 5,
+    circle: appSettings.tools?.circle?.size ?? 5,
+    polygon: appSettings.tools?.polygon?.size ?? 5,
+    eraser: appSettings.tools?.eraser?.size ?? 5,
+    'object-eraser': 1,
   });
   readonly strokeSize = computed(() => this.toolSizeMap()[this.activeTool()] ?? 5);
-  readonly brushSpacing = signal<number>(45);
-  readonly colorTolerance = signal<number>(16);
+  readonly brushSpacing = signal<number>(appSettings.tools?.brush?.spacing ?? 45);
+  readonly colorTolerance = signal<number>(appSettings.tools?.bucketFill?.tolerance ?? 16);
   readonly strokeColor = signal<string>(appSettings.canvas.defaultStrokeColor ?? '#000000');
   readonly fillColor = signal<string>(appSettings.canvas.defaultFillColor ?? '#ffffff');
-  readonly backgroundColor = signal<string>(appSettings.board.defaultBackgroundColor ?? '#ffffff');
+  readonly backgroundColor = signal<string>(appSettings.canvas.defaultBackgroundColor ?? '#ffffff');
   readonly onionLayerRect = signal({
     left: 0,
     top: 0,
@@ -114,7 +115,7 @@ export class CanvasComponent implements AfterViewInit, OnDestroy {
       label: 'BG',
       signal: this.backgroundColor,
       setter: this.setBackgroundColor.bind(this),
-      quickColors: ['transparent', appSettings.board.defaultBackgroundColor ?? '#ffffff'],
+      quickColors: ['transparent', appSettings.canvas.defaultBackgroundColor ?? '#ffffff'],
     },
   ];
 
@@ -432,15 +433,18 @@ export class CanvasComponent implements AfterViewInit, OnDestroy {
       brushTool.spacing = this.brushSpacing();
     }
 
-    // Apply default stroke size to all tools that support it; object-eraser is fixed at 1
+    this.setColorTolerance(this.colorTolerance());
+
+    // Apply the configured size to each drawing tool.
     this.toolInstances.forEach((tool, id) => {
       if (tool.strokeWidth !== undefined) {
-        tool.strokeWidth = id === 'object-eraser' ? 1 : this.toolSizeMap()[id] ?? 5;
+        tool.strokeWidth = this.toolSizeMap()[id] ?? 5;
       }
     });
 
     // Activate the default tool
-    this.setTool(appSettings.canvas.defaultTool ?? 'pencil');
+    const defaultTool = appSettings.canvas.defaultTool ?? 'pencil';
+    this.setTool(this.toolInstances.has(defaultTool) ? defaultTool : 'pencil');
   }
 
   private loadBoardData(boardId: string) {
@@ -666,7 +670,7 @@ export class CanvasComponent implements AfterViewInit, OnDestroy {
 
     const tool = this.toolInstances.get(toolId);
     if (tool) {
-      if (tool.strokeWidth !== undefined && toolId !== 'object-eraser') {
+      if (tool.strokeWidth !== undefined) {
         tool.strokeWidth = this.toolSizeMap()[toolId] ?? 5;
       }
       if (toolId === 'brush') {
@@ -727,7 +731,7 @@ export class CanvasComponent implements AfterViewInit, OnDestroy {
   }
 
   public requestClearCanvas(): void {
-    const showWarning = appSettings.export.showClearCanvasWarning;
+    const showWarning = appSettings.canvas.showClearCanvasWarning;
     if (showWarning) {
       this.showClearCanvasConfirm.set(true);
     } else {

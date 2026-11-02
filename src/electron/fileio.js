@@ -7,6 +7,7 @@ let lastUsedDir = null;
 let settingsFile = null;
 let currentFilePath = null;
 let appSettingsPath = null;
+let settingsWriteQueue = Promise.resolve(true);
 
 async function loadSettings() {
   try {
@@ -268,7 +269,9 @@ function registerIpcHandlers() {
         }
       });
 
-      await saveAppSettings(restoredSettings);
+      if (!(await saveAppSettings(restoredSettings))) {
+        throw new Error('Failed to save restored settings');
+      }
 
       return { success: true };
     } catch (err) {
@@ -364,15 +367,22 @@ async function loadAppSettings() {
   }
 }
 
-async function saveAppSettings(settings) {
-  try {
-    await fs.mkdir(path.dirname(appSettingsPath), { recursive: true });
-    await fs.writeFile(appSettingsPath, JSON.stringify(settings, null, 2), 'utf-8');
-    return true;
-  } catch (err) {
-    console.error(`[Settings] Failed to save app settings to ${appSettingsPath}:`, err);
-    return false;
-  }
+function saveAppSettings(settings) {
+  // Serialize snapshots so rapid edits cannot finish out of order or overlap writes.
+  const serialized = JSON.stringify(settings, null, 2);
+  settingsWriteQueue = settingsWriteQueue.then(async () => {
+    try {
+      await fs.mkdir(path.dirname(appSettingsPath), { recursive: true });
+      const temporaryPath = `${appSettingsPath}.tmp`;
+      await fs.writeFile(temporaryPath, serialized, 'utf-8');
+      await fs.rename(temporaryPath, appSettingsPath);
+      return true;
+    } catch (err) {
+      console.error(`[Settings] Failed to save app settings to ${appSettingsPath}:`, err);
+      return false;
+    }
+  });
+  return settingsWriteQueue;
 }
 
 module.exports = {

@@ -1,3 +1,22 @@
+.collapse-button {
+  flex: 0 0 auto;
+  padding: 0;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--text-light);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.collapse-button:hover {
+  background-color: var(--bg-hover);
+  border-color: var(--border-default);
+  color: var(--text-default);
+}
+
 .settings-content {
   padding: 0 8px 8px;
   display: flex;
@@ -9,6 +28,40 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+
+.section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 0 2px 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--border-default) 40%, transparent);
+}
+
+.section-title {
+  margin: 0;
+  padding: 0;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1.2px;
+  color: var(--text-light);
+  border-bottom: 0;
+}
+
+.collapse-button {
+  width: 24px;
+  height: 24px;
+  border-radius: 5px;
+}
+
+.collapse-button svg {
+  transition: transform 0.2s ease;
+}
+
+.collapse-button.collapsed svg {
+  transform: rotate(-90deg);
 }
 
 .settings-grid {
@@ -115,6 +168,37 @@ app-color-picker.color-input {
 
 .compact-color-field .field-label {
   letter-spacing: 0.7px;
+}
+
+.tools-grid {
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+}
+
+.tool-field-wide {
+  grid-column: span 2;
+}
+
+.tool-props {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  gap: 8px;
+}
+
+.tool-prop {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.tool-prop-label {
+  font-size: 9px;
+  font-weight: 600;
+  color: var(--text-light);
+  text-transform: uppercase;
+  letter-spacing: 0.7px;
+  opacity: 0.85;
 }
 
 .folder-input-group,
@@ -371,4 +455,14 @@ app-color-picker.color-input {
 
 .dialog::-webkit-scrollbar-thumb:hover {
   background: color-mix(in srgb, var(--border-default) 80%, transparent);
+}
+
+@media (max-width: 380px) {
+  .tools-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .tool-field-wide {
+    grid-column: auto;
+  }
 }

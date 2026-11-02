@@ -19,6 +19,7 @@
     "build:mobile": "ng build --configuration mobile",
     "watch": "ng build --watch --configuration development",
     "test": "ng test",
+    "test:electron": "node --test tests/*.test.cjs",
     "electron": "npm run build && electron electron-main.js",
     "electron:dev": "ng build --watch & wait-on dist/index.html && electron electron-main.js",
     "electron:build": "npm run build && electron-builder",

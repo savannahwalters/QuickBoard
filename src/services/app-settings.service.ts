@@ -62,6 +62,15 @@ export interface AppSettings {
     prevColor: string;
     nextColor: string;
   };
+  tools?: {
+    pencil?: { size?: number };
+    brush?: { size?: number; spacing?: number };
+    eraser?: { size?: number };
+    rectangle?: { size?: number };
+    circle?: { size?: number };
+    polygon?: { size?: number };
+    bucketFill?: { tolerance?: number };
+  };
 }
 
 @Injectable({ providedIn: 'root' })
@@ -223,7 +232,7 @@ export class AppSettingsService {
   getDefaultVolumePercent(): number {
     try {
       const settings = appSettings as Partial<AppSettings> | undefined;
-      return (settings?.audio?.defaultVolume || 1) * 100;
+      return (settings?.audio?.defaultVolume ?? 1) * 100;
     } catch {
       return 100;
     }

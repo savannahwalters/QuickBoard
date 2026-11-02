@@ -35,5 +35,5 @@ export { ScriptComponent } from './script';
 // Dialogs
 export { ExportProgressComponent } from './export-progress/export-progress.component';
 export { ExportSettingsComponent } from './export-settings/export-settings.component';
-export { EXPORT_RESOLUTIONS } from './export-settings/export-resolutions';
+export { getExportResolutions } from './export-settings/export-resolutions';
 export type { ExportResolution } from './export-settings/export-resolutions';
