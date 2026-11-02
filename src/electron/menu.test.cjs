@@ -66,8 +66,11 @@ function loadMenu(platform) {
   vm.runInNewContext(fs.readFileSync(path.join(__dirname, 'menu.js'), 'utf8'), context);
   const main = new BrowserWindow({});
   main.focus();
-  context.module.exports.buildMenu({ name: 'QuickBoard', getAppPath: () => process.cwd() }, main);
-  return { template, main, windows };
+  const app = { name: 'QuickBoard', getAppPath: () => process.cwd() };
+  const rebuild = (preferredWindow, hooks) =>
+    context.module.exports.buildMenu(app, preferredWindow, hooks);
+  rebuild(main);
+  return { template, main, windows, rebuild };
 }
 
 for (const platform of ['darwin', 'win32']) {
@@ -109,5 +112,23 @@ for (const platform of ['darwin', 'win32']) {
     undo.click();
     assert.equal(windows[1].undone, true);
     assert.equal(main.messages.length, 1);
+  });
+
+  test(`${platform}: rebuilt menus never send project actions to dialog windows`, () => {
+    const { template, main, windows, rebuild } = loadMenu(platform);
+    const menu = template.find(
+      (item) => item.label === (platform === 'darwin' ? 'QuickBoard' : 'File')
+    );
+    menu.submenu.find((item) => item.label === 'Keyboard Shortcuts').click();
+    const targets = [];
+    const rebuilt = rebuild(windows[1], { onSave: (target) => targets.push(target) });
+    const save = rebuilt
+      .find((item) => item.label === 'File')
+      .submenu.find((item) => item.label === 'Save');
+    save.click();
+    assert.deepEqual(targets, [main]);
+    main.isDestroyed = () => true;
+    save.click();
+    assert.deepEqual(targets, [main]);
   });
 }

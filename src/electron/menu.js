@@ -25,20 +25,18 @@ function isWindowAlive(win) {
   return !!win && !win.isDestroyed() && !!win.webContents && !win.webContents.isDestroyed();
 }
 
+function isDialogWindow(win) {
+  return [aboutWin, settingsWin, shortcutsWin].includes(win);
+}
+
 function resolveMainWindow(preferredWin) {
-  if (isWindowAlive(preferredWin)) {
+  if (isWindowAlive(preferredWin) && !isDialogWindow(preferredWin)) {
     return preferredWin;
   }
 
-  const windows = BrowserWindow.getAllWindows();
-  const nonAboutWindow = windows.find(
-    (w) => isWindowAlive(w) && ![aboutWin, settingsWin, shortcutsWin].includes(w)
+  return (
+    BrowserWindow.getAllWindows().find((win) => isWindowAlive(win) && !isDialogWindow(win)) || null
   );
-  if (nonAboutWindow) {
-    return nonAboutWindow;
-  }
-
-  return null;
 }
 
 function sendToMainWindow(preferredWin, channel, payload) {
@@ -228,7 +226,7 @@ function buildMenu(app, win, hooks = {}) {
           click: () => {
             const focused = BrowserWindow.getFocusedWindow();
             if (!isWindowAlive(focused)) return;
-            if ([aboutWin, settingsWin, shortcutsWin].includes(focused)) {
+            if (isDialogWindow(focused)) {
               focused.webContents[command]();
             } else {
               focused.webContents.send('quickboard:shortcut', command);

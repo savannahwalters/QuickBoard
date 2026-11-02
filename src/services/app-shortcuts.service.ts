@@ -1,9 +1,8 @@
 import { inject, Injectable } from '@angular/core';
 import { AppStore } from 'src/data';
-import { CanvasComponent } from 'src/ui';
-import { PlaybackService } from 'src/services';
-import { UndoRedoService } from 'src/services';
-import { TimelineActions } from 'src/ui';
+import { CanvasComponent, TimelineActions } from 'src/ui';
+import { PlaybackService } from './playback.service';
+import { UndoRedoService } from './undo-redo.service';
 import { TimelineZoomService } from './timeline-zoom.service';
 import { matchShortcut } from 'src/shared/shortcuts';
 
@@ -18,182 +17,99 @@ export class AppShortcutsService {
   handleKeyDown(event: KeyboardEvent, canvas: CanvasComponent): void {
     const shortcut = matchShortcut(event);
     if (!shortcut || shortcut.group === 'Tools' || (window.quickboard && shortcut.menu)) return;
-    if (shortcut.id === 'playback') {
-      if (!event.repeat) {
-        event.preventDefault();
+
+    switch (shortcut.id) {
+      case 'playback':
+        if (event.repeat) return;
         this.playback.togglePlayback();
-      }
-    } else if (shortcut.modifiers.includes('primary')) {
-      this.onCtrlKeyShortcuts(event, canvas);
-    } else if (shortcut.modifiers.includes('alt')) {
-      event.preventDefault();
-      this.onAltKeyShortcuts(event);
-    } else {
-      this.onNotCtrlKeyShortcuts(event);
-    }
-  }
-
-  private onNotCtrlKeyShortcuts(event: KeyboardEvent) {
-    const key = matchShortcut(event)?.id;
-    const currentIndex = this.store
-      .boards()
-      .findIndex((board) => board.id === this.store.currentBoardId());
-    const ranges = this.playback.getTimeRanges();
-
-    if (!this.store.boards().length) return;
-    switch (key) {
-      case 'next-board': {
-        const nextBoardIndex = Math.min(this.store.boards().length - 1, currentIndex + 1);
-        const nextBoardID = this.store.boards()[nextBoardIndex].id;
-        this.store.setCurrentBoard(nextBoardID);
-        this.playback.seek(ranges[nextBoardIndex].startTime);
+        break;
+      case 'undo':
+        this.undoRedo.triggerUndo();
+        break;
+      case 'redo':
+        this.undoRedo.triggerRedo();
+        break;
+      case 'add-board':
+        this.store.addBoard();
+        break;
+      case 'add-audio-lane':
+        this.store.addAudioLane();
+        break;
+      case 'duplicate-board': {
+        const currentBoardId = this.store.currentBoardId();
+        if (currentBoardId) this.actions.duplicateBoard(currentBoardId);
         break;
       }
-      case 'previous-board': {
-        const prevBoardIndex = Math.max(0, currentIndex - 1);
-        const prevBoardID = this.store.boards()[prevBoardIndex].id;
-        this.store.setCurrentBoard(prevBoardID);
-        this.playback.seek(ranges[prevBoardIndex].startTime);
+      case 'delete-board': {
+        const currentBoardId = this.store.currentBoardId();
+        if (currentBoardId) this.actions.deleteBoard(currentBoardId);
         break;
       }
-      case 'move-board-right':
-      case 'seek-right': {
-        event.preventDefault();
-        if (key === 'move-board-right') {
-          const nextBoardIndex = Math.min(this.store.boards().length - 1, currentIndex + 1);
-          this.store.reorderBoards(currentIndex, nextBoardIndex);
-          this.playback.seek(ranges[currentIndex].endTime);
-          this.store.setCurrentBoard(this.store.boards()[nextBoardIndex].id);
-        } else {
-          this.store.setCurrentTime(this.store.currentTime() + 1);
-          this.playback.seek(this.store.currentTime());
-        }
+      case 'clear-canvas':
+        canvas.requestClearCanvas();
+        break;
+      case 'timeline-zoom-in':
+        this.timeZoom.zoomIn();
+        break;
+      case 'timeline-zoom-out':
+        this.timeZoom.zoomOut();
+        break;
+      case 'seek-left':
+      case 'seek-right':
+        this.store.setCurrentTime(
+          this.store.currentTime() + (shortcut.id === 'seek-right' ? 1 : -1)
+        );
+        this.playback.seek(this.store.currentTime());
+        break;
+      case 'previous-board':
+      case 'next-board':
+      case 'first-board':
+      case 'last-board': {
+        const boards = this.store.boards();
+        if (!boards.length) return;
+        const currentIndex = boards.findIndex((board) => board.id === this.store.currentBoardId());
+        const direction = shortcut.id === 'next-board' ? 1 : -1;
+        const index =
+          shortcut.id === 'first-board'
+            ? 0
+            : shortcut.id === 'last-board'
+            ? boards.length - 1
+            : Math.max(0, Math.min(boards.length - 1, currentIndex + direction));
+        this.store.setCurrentBoard(boards[index].id);
+        this.playback.seek(this.playback.getTimeRanges()[index].startTime);
         break;
       }
       case 'move-board-left':
-      case 'seek-left': {
-        event.preventDefault();
-        if (key === 'move-board-left') {
-          const prevBoardIndex = Math.max(0, currentIndex - 1);
-          this.store.reorderBoards(currentIndex, prevBoardIndex);
-          this.playback.seek(ranges[prevBoardIndex].startTime);
-          this.store.setCurrentBoard(this.store.boards()[prevBoardIndex].id);
-        } else {
-          this.store.setCurrentTime(this.store.currentTime() - 1);
-          this.playback.seek(this.store.currentTime());
-        }
+      case 'move-board-right': {
+        const boards = this.store.boards();
+        const currentIndex = boards.findIndex((board) => board.id === this.store.currentBoardId());
+        if (currentIndex < 0) return;
+        const direction = shortcut.id === 'move-board-right' ? 1 : -1;
+        const nextIndex = Math.max(0, Math.min(boards.length - 1, currentIndex + direction));
+        const ranges = this.playback.getTimeRanges();
+        this.store.reorderBoards(currentIndex, nextIndex);
+        this.playback.seek(
+          direction === 1 ? ranges[currentIndex].endTime : ranges[nextIndex].startTime
+        );
+        this.store.setCurrentBoard(this.store.boards()[nextIndex].id);
         break;
       }
-      case 'timeline-zoom-in': {
-        this.timeZoom.zoomIn();
-        break;
-      }
-      case 'timeline-zoom-out': {
-        this.timeZoom.zoomOut();
-        break;
-      }
-      default:
-        return;
-    }
-    event.preventDefault();
-  }
-
-  private onCtrlKeyShortcuts(event: KeyboardEvent, canvas: CanvasComponent) {
-    // actions with ctrl/cmd key
-    const shortcut = matchShortcut(event);
-    const key = shortcut?.id;
-    const ranges = this.playback.getTimeRanges();
-
-    switch (key) {
-      case 'undo': {
-        this.undoRedo.triggerUndo();
-        break;
-      }
-      case 'redo': {
-        this.undoRedo.triggerRedo();
-        break;
-      }
-      case 'add-board':
-      case 'add-audio-lane': {
-        if (key === 'add-audio-lane') {
-          this.store.addAudioLane();
-        } else {
-          this.store.addBoard();
-        }
-        break;
-      }
-      case 'duplicate-board': {
-        const currentBoardId = this.store.currentBoardId();
-        if (currentBoardId) {
-          this.actions.duplicateBoard(currentBoardId);
-        }
-        break;
-      }
-      case 'delete-board':
-      case 'clear-canvas': {
-        if (key === 'clear-canvas') {
-          canvas.requestClearCanvas();
-        } else {
-          const currentBoardId = this.store.currentBoardId();
-          if (currentBoardId) {
-            this.actions.deleteBoard(currentBoardId);
-          }
-        }
-        break;
-      }
-      case 'save':
-      case 'save-as': {
-        if (key === 'save-as') {
-          window.quickboard?.requestSaveAs();
-        } else {
-          window.quickboard?.requestSave();
-        }
-        break;
-      }
-      case 'load':
-        window.quickboard?.loadIn();
-        break;
-      case 'export':
-        window.quickboard?.requestExport();
-        break;
-      case 'last-board': {
-        if (!this.store.boards().length) return;
-        const lastBoard = this.store.boards()[this.store.boards().length - 1].id;
-        this.store.setCurrentBoard(lastBoard);
-        this.playback.seek(ranges[this.store.boards().length - 1].startTime);
-        break;
-      }
-      case 'first-board': {
-        if (!this.store.boards().length) return;
-        const firstBoard = this.store.boards()[0].id;
-        this.store.setCurrentBoard(firstBoard);
-        this.playback.seek(ranges[0].startTime);
+      case 'lengthen-board':
+      case 'shorten-board': {
+        const boards = this.store.boards();
+        const currentIndex = boards.findIndex((board) => board.id === this.store.currentBoardId());
+        if (currentIndex < 0) return;
+        const range = this.playback.getTimeRanges()[currentIndex];
+        const delta = shortcut.id === 'lengthen-board' ? 0.5 : -0.5;
+        this.store.updateBoardDuration(
+          boards[currentIndex].id,
+          Math.max(0.5, range.endTime + delta)
+        );
         break;
       }
       default:
         return;
     }
     event.preventDefault();
-  }
-
-  private onAltKeyShortcuts(event: KeyboardEvent) {
-    const key = matchShortcut(event)?.id;
-    const currentIndex = this.store
-      .boards()
-      .findIndex((board) => board.id === this.store.currentBoardId());
-    const ranges = this.playback.getTimeRanges();
-
-    if (currentIndex < 0) return;
-    if (key === 'lengthen-board') {
-      this.store.updateBoardDuration(
-        this.store.boards()[currentIndex]?.id,
-        (ranges[currentIndex].endTime += 0.5)
-      );
-    } else if (key === 'shorten-board') {
-      this.store.updateBoardDuration(
-        this.store.boards()[currentIndex]?.id,
-        Math.max(0.5, (ranges[currentIndex].endTime -= 0.5))
-      );
-    }
   }
 }
