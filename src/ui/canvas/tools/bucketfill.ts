@@ -36,7 +36,7 @@ export class BucketFill {
 
     const imageData = sourceCtx.getImageData(0, 0, width, height);
     const targetColor = this.getPixel(imageData, px, py);
-    if (!targetColor || this.colorsMatch(targetColor, fillColor)) return;
+    if (!targetColor || this.colorsMatch(targetColor, fillColor, 0)) return;
 
     // Flood fill into a separate transparent canvas (only filled pixels are set).
     const offscreen = document.createElement('canvas');
@@ -47,17 +47,10 @@ export class BucketFill {
     this.floodFill(imageData, fillData, px, py, targetColor, fillColor);
     offCtx.putImageData(fillData, 0, 0);
 
-    // Create the Image element and save the shape immediately (without waiting for
-    // onload). LC's image renderer has a built-in retry mechanism: if the image
-    // isn't loaded when a repaint occurs, it sets img.onload = retryCallback so
-    // another repaint fires as soon as the image is ready.
-    const img = new Image();
-    img.src = offscreen.toDataURL('image/png');
-
     const shape = LC.createShape('Image', {
       x: 0,
       y: 0,
-      image: img,
+      image: Object.defineProperty(offscreen, 'src', { value: offscreen.toDataURL('image/png') }),
       scale: 1 / srcScale, // stretches the half-res image back to full world size
     });
     lc.saveShape(shape);

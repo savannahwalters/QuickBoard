@@ -68,6 +68,7 @@ export function registerImprovedSelectShapes(LC: Record<string, unknown>): void 
         x: this['x'],
         y: this['y'],
         imageSrc: this['image'] ? (this['image'] as HTMLImageElement).src : null,
+        imageObject: this['image'],
         scale: this['scale'],
         rotation: this['rotation'],
         cropX: this['cropX'],
@@ -79,8 +80,9 @@ export function registerImprovedSelectShapes(LC: Record<string, unknown>): void 
       return data;
     },
     fromJSON: function (data: Record<string, unknown>) {
-      let img = null;
-      if (data['imageSrc']) {
+      const imageObject = data['imageObject'] as HTMLImageElement | undefined;
+      let img = imageObject?.width ? imageObject : null;
+      if (!img && data['imageSrc']) {
         img = new Image();
         if (data['crossOrigin']) img.crossOrigin = data['crossOrigin'] as string;
         img.src = data['imageSrc'] as string;
