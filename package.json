@@ -67,7 +67,7 @@
     "fileAssociations": [
       {
         "ext": "sbd",
-        "name": "QuickBoard Board",
+        "name": "QuickBoard Project",
         "description": "QuickBoard storyboard file",
         "mimeType": "application/x-quickboard-sbd",
         "role": "Editor"
