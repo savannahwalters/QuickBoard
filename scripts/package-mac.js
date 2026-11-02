@@ -74,7 +74,7 @@ packager({
     })),
   },
   ignore: [
-    /^\/src\/(?!electron(?:\/|$)|shared(?:\/themes\.json)?\/?$)/,
+    /^\/src\/(?!electron(?:\/|$)|shared(?:\/(?:themes|shortcuts)\.json)?\/?$)/,
     /^\/branding/,
     /^\/scripts/,
     /^\/android/,

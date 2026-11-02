@@ -62,6 +62,7 @@
       "electron-main.js",
       "src/electron/**/*",
       "src/shared/themes.json",
+      "src/shared/shortcuts.json",
       "package.json"
     ],
     "fileAssociations": [

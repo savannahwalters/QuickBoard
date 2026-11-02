@@ -1,4 +1,5 @@
 import { CanvasComponent } from './canvas.component';
+import { matchShortcut } from 'src/shared/shortcuts';
 
 export class CanvasShortcutsController {
   constructor(private readonly canvas: CanvasComponent) {}
@@ -26,14 +27,15 @@ export class CanvasShortcutsController {
       return;
     }
 
-    const key = event.key.toLowerCase();
+    const shortcut = matchShortcut(event);
+    if (!shortcut || shortcut.group !== 'Tools') return;
     const shift = event.shiftKey;
 
-    switch (key) {
-      case 's':
+    switch (shortcut.id) {
+      case 'select-tool':
         this.canvas.switchTools('select');
         break;
-      case 'i': {
+      case 'image-tool': {
         this.canvas.switchTools('image');
         const input = this.canvas.document.createElement('input') as HTMLInputElement;
         input.type = 'file';
@@ -47,19 +49,19 @@ export class CanvasShortcutsController {
         input.click();
         break;
       }
-      case 'd':
+      case 'pencil-tool':
         this.canvas.switchTools('pencil');
         break;
-      case 'h':
+      case 'shape-tool':
         this.canvas.switchTools('rectangle');
         break;
-      case 'e':
+      case 'eraser-tool':
         this.canvas.switchTools('eraser');
         break;
-      case 'f':
+      case 'fill-tool':
         this.canvas.switchTools('bucket-fill');
         break;
-      case 'n': {
+      case 'next-subtool': {
         event.preventDefault();
         const tb = this.canvas.toolbar();
         if (tb?.isDrawToolActive()) {
@@ -99,7 +101,7 @@ export class CanvasShortcutsController {
         }
         break;
       }
-      case 'b': {
+      case 'previous-subtool': {
         event.preventDefault();
         const tb = this.canvas.toolbar();
         if (tb?.isDrawToolActive()) {
@@ -139,7 +141,7 @@ export class CanvasShortcutsController {
         }
         break;
       }
-      case 'enter': {
+      case 'activate-tool': {
         if (this.canvas.activeTool() === 'zoom') {
           const zoomCenter = this.canvas.lc?.canvas?.getBoundingClientRect
             ? (() => {
@@ -183,7 +185,7 @@ export class CanvasShortcutsController {
         }
         break;
       }
-      case 'tab': {
+      case 'next-tool-group': {
         event.preventDefault();
         const tb = this.canvas.toolbar();
         if (tb?.isDrawToolActive()) {

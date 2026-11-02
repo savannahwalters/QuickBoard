@@ -11,11 +11,11 @@ import { SaveService } from '../services/save.service';
 import { ExportIpcService } from '../services/export-ipc.service';
 import { WindowScalingService } from '../services/window-scaling.service';
 import { UndoRedoService } from '../services/undo-redo.service';
-import { PlaybackService } from '../services/playback.service';
 import { AndroidOpenFileService } from '../services/android-open-file.service';
 import { WebToolbarComponent } from '../ui/web-toolbar/web-toolbar.component';
 import { Capacitor } from '@capacitor/core';
 import { AppShortcutsService, IosIntegrationService } from 'src/services';
+import { KeyboardShortcutsComponent } from '../ui/dialogs/keyboard-shortcuts/keyboard-shortcuts.component';
 
 @Component({
   selector: 'app-root',
@@ -32,6 +32,7 @@ import { AppShortcutsService, IosIntegrationService } from 'src/services';
     ExportSettingsComponent,
     AboutWindowComponent,
     SettingsComponent,
+    KeyboardShortcutsComponent,
     WebToolbarComponent,
   ],
   templateUrl: './app.html',
@@ -41,7 +42,7 @@ export class App implements OnInit, OnDestroy {
   protected readonly title = signal('QuickBoard');
   protected readonly isCanvasFullscreen = signal(false);
   protected readonly saveService = inject(SaveService);
-  protected readonly dialogMode = signal<'about' | 'settings' | null>(null);
+  protected readonly dialogMode = signal<'about' | 'settings' | 'shortcuts' | null>(null);
   private readonly canvas = viewChild(CanvasComponent);
   private readonly el = inject(ElementRef);
   private readonly themeService = inject(ThemeService);
@@ -52,7 +53,6 @@ export class App implements OnInit, OnDestroy {
   protected readonly showWebToolbar = !this.isElectron && !this.isIos;
   protected readonly useSafeArea = !this.isElectron;
   private readonly undoRedo = inject(UndoRedoService);
-  private readonly playback = inject(PlaybackService);
   private readonly androidOpenFile = inject(AndroidOpenFileService);
   private readonly iosIntegration = inject(IosIntegrationService);
   private readonly shortcuts = inject(AppShortcutsService);
@@ -76,8 +76,8 @@ export class App implements OnInit, OnDestroy {
     // Check if this window was opened as a dialog by the main process
     const params = new URLSearchParams(window.location.search);
     const dialog = params.get('dialog');
-    if (dialog === 'about' || dialog === 'settings') {
-      this.dialogMode.set(dialog as 'about' | 'settings');
+    if (dialog === 'about' || dialog === 'settings' || dialog === 'shortcuts') {
+      this.dialogMode.set(dialog);
       return;
     }
 
@@ -88,6 +88,15 @@ export class App implements OnInit, OnDestroy {
     // for shortcuts attached to appmenu options (working through electron side)
     if (window.quickboard?.onShortcut) {
       this.removeShortcutListener = window.quickboard.onShortcut((option: string) => {
+        const target = document.activeElement as HTMLElement | null;
+        if (
+          target &&
+          !target.closest('#editorjs') &&
+          (target.matches('input, textarea, select') || target.isContentEditable)
+        ) {
+          document.execCommand(option);
+          return;
+        }
         switch (option) {
           case 'undo':
             this.undoRedo.triggerUndo();
@@ -131,7 +140,11 @@ export class App implements OnInit, OnDestroy {
       return false;
     }
 
-    if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) {
+    if (
+      target instanceof HTMLInputElement ||
+      target instanceof HTMLTextAreaElement ||
+      target instanceof HTMLSelectElement
+    ) {
       return true;
     }
 
@@ -143,6 +156,7 @@ export class App implements OnInit, OnDestroy {
   }
 
   onKeyDown(event: KeyboardEvent): void {
+    if (event.defaultPrevented || event.isComposing) return;
     const key = event.key.toLowerCase();
 
     if (key === 'escape' && this.dialogMode() !== null) {
@@ -157,12 +171,7 @@ export class App implements OnInit, OnDestroy {
       return;
     }
 
-    if ((key === ' ' || key === 'spacebar') && !event.ctrlKey && !event.metaKey) {
-      if (event.repeat || this.isEditableTarget(event) || this.dialogMode() !== null) {
-        return;
-      }
-      event.preventDefault();
-      this.playback.togglePlayback();
+    if (this.dialogMode() !== null || this.exportIpc.settingsVisible()) {
       return;
     }
 
@@ -174,20 +183,13 @@ export class App implements OnInit, OnDestroy {
         return;
       }
       const ctrl = event.ctrlKey || event.metaKey;
-      if (!ctrl) {
+      if (!ctrl || !['z', 'y'].includes(key)) {
         return;
       }
     }
 
-    const ctrl = event.ctrlKey || event.metaKey;
-    // actions depending on ctrl/cmd key is active
-    if (ctrl) {
-      this.shortcuts.onCtrlKeyShortcuts(event, this.canvas() as CanvasComponent, event.shiftKey);
-    } else if (event.altKey) {
-      this.shortcuts.onAltKeyShortcuts(event);
-    } else {
-      this.shortcuts.onNotCtrlKeyShortcuts(event, this.canvas() as CanvasComponent, event.shiftKey);
-    }
+    const canvas = this.canvas();
+    if (canvas) this.shortcuts.handleKeyDown(event, canvas);
   }
 
   ngOnDestroy(): void {
@@ -201,6 +203,10 @@ export class App implements OnInit, OnDestroy {
   }
 
   protected closeDialog(): void {
+    if (this.isElectron && new URLSearchParams(window.location.search).has('dialog')) {
+      window.close();
+      return;
+    }
     this.dialogMode.set(null);
   }
 }

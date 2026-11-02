@@ -1,11 +1,25 @@
-const { Menu, nativeTheme, BrowserWindow, dialog, globalShortcut } = require('electron');
+const { Menu, nativeTheme, BrowserWindow } = require('electron');
 const fs = require('fs');
 const path = require('path');
 const appSettings = require('./config/appsettings.json');
 const themes = require('../shared/themes.json');
+const shortcuts = require('../shared/shortcuts.json');
 
 let aboutWin = null;
 let settingsWin = null;
+let shortcutsWin = null;
+
+function shortcutMenuItem(id, options = {}) {
+  const shortcut = shortcuts.find((item) => item.id === id && item.menu);
+  const modifiers = { primary: 'CmdOrCtrl', shift: 'Shift', alt: 'Alt' };
+  return {
+    label: shortcut.label,
+    accelerator: [...shortcut.modifiers.map((modifier) => modifiers[modifier]), shortcut.key].join(
+      '+'
+    ),
+    ...options,
+  };
+}
 
 function isWindowAlive(win) {
   return !!win && !win.isDestroyed() && !!win.webContents && !win.webContents.isDestroyed();
@@ -17,12 +31,14 @@ function resolveMainWindow(preferredWin) {
   }
 
   const windows = BrowserWindow.getAllWindows();
-  const nonAboutWindow = windows.find((w) => isWindowAlive(w) && w !== aboutWin);
+  const nonAboutWindow = windows.find(
+    (w) => isWindowAlive(w) && ![aboutWin, settingsWin, shortcutsWin].includes(w)
+  );
   if (nonAboutWindow) {
     return nonAboutWindow;
   }
 
-  return windows.find((w) => isWindowAlive(w)) || null;
+  return null;
 }
 
 function sendToMainWindow(preferredWin, channel, payload) {
@@ -76,6 +92,22 @@ function openSettingsWindow(app) {
   });
 }
 
+function openShortcutsWindow(app) {
+  if (isWindowAlive(shortcutsWin)) {
+    shortcutsWin.focus();
+    return;
+  }
+  shortcutsWin = openDialogWindow(app, {
+    title: 'Keyboard Shortcuts',
+    width: 640,
+    height: 720,
+    query: { dialog: 'shortcuts' },
+  });
+  shortcutsWin.on('closed', () => {
+    shortcutsWin = null;
+  });
+}
+
 function openDialogWindow(app, { title, width, height, query }) {
   const preloadPath = path.join(app.getAppPath(), 'src', 'electron', 'preload.js');
   const win = new BrowserWindow({
@@ -122,54 +154,49 @@ function buildMenu(app, win, hooks = {}) {
   const fileMenu = {
     label: 'File',
     submenu: [
-      {
-        label: 'Save',
-        accelerator: 'CmdOrCtrl+S',
+      shortcutMenuItem('save', {
         click: () => {
           if (typeof hooks.onSave === 'function') {
             const target = resolveMainWindow(win);
             if (target) hooks.onSave(target);
           }
         },
-      },
-      {
-        label: 'Save As...',
-        accelerator: 'CmdOrCtrl+Shift+S',
+      }),
+      shortcutMenuItem('save-as', {
         click: () => {
-          if (typeof hooks.onSaveAs === 'function') hooks.onSaveAs(win);
+          const target = resolveMainWindow(win);
+          if (target && typeof hooks.onSaveAs === 'function') hooks.onSaveAs(target);
         },
-      },
-      {
-        label: 'Load',
-        accelerator: 'CmdOrCtrl+O',
+      }),
+      shortcutMenuItem('load', {
         click: () => {
           if (typeof hooks.onLoad === 'function') {
             const target = resolveMainWindow(win);
             if (target) hooks.onLoad(target);
           }
         },
-      },
+      }),
       { type: 'separator' },
-      {
-        label: 'Export...',
-        accelerator: 'CmdOrCtrl+E',
+      shortcutMenuItem('export', {
         click: () => {
           if (typeof hooks.onExport === 'function') {
             const target = resolveMainWindow(win);
             if (target) hooks.onExport(target);
           }
         },
-      },
+      }),
       ...(process.platform !== 'darwin'
         ? [
             { type: 'separator' },
             {
-              label: 'Settings',
-              accelerator: 'CmdOrCtrl+,',
-              click: () => openSettingsWindow(app),
+              label: 'Keyboard Shortcuts',
+              click: () => openShortcutsWindow(app),
             },
+            shortcutMenuItem('settings', { click: () => openSettingsWindow(app) }),
           ]
         : []),
+      { type: 'separator' },
+      shortcutMenuItem('close', { role: 'close' }),
     ],
   };
 
@@ -196,20 +223,24 @@ function buildMenu(app, win, hooks = {}) {
   const editMenu = {
     label: 'Edit',
     submenu: [
-      {
-        label: 'Undo',
-        accelerator: 'CmdOrCtrl+Z',
-        click: () => {
-          sendToMainWindow(win, 'quickboard:shortcut', 'undo');
-        },
-      },
-      {
-        label: 'Redo',
-        accelerator: 'CmdOrCtrl+Shift+Z',
-        click: () => {
-          sendToMainWindow(win, 'quickboard:shortcut', 'redo');
-        },
-      },
+      ...['undo', 'redo'].map((command) =>
+        shortcutMenuItem(command, {
+          click: () => {
+            const focused = BrowserWindow.getFocusedWindow();
+            if (!isWindowAlive(focused)) return;
+            if ([aboutWin, settingsWin, shortcutsWin].includes(focused)) {
+              focused.webContents[command]();
+            } else {
+              focused.webContents.send('quickboard:shortcut', command);
+            }
+          },
+        })
+      ),
+      { type: 'separator' },
+      shortcutMenuItem('cut', { role: 'cut' }),
+      shortcutMenuItem('copy', { role: 'copy' }),
+      shortcutMenuItem('paste', { role: 'paste' }),
+      shortcutMenuItem('select-all', { role: 'selectAll' }),
     ],
   };
 
@@ -225,12 +256,12 @@ function buildMenu(app, win, hooks = {}) {
           click: () => openAboutWindow(app),
         },
         {
-          label: 'Settings',
-          accelerator: 'Cmd+,',
-          click: () => openSettingsWindow(app),
+          label: 'Keyboard Shortcuts',
+          click: () => openShortcutsWindow(app),
         },
+        shortcutMenuItem('settings', { click: () => openSettingsWindow(app) }),
         { type: 'separator' },
-        { role: 'quit' },
+        shortcutMenuItem('quit', { role: 'quit' }),
       ],
     });
     template.push(fileMenu);
@@ -241,7 +272,7 @@ function buildMenu(app, win, hooks = {}) {
     template.push(editMenu);
     template.push(viewMenu);
     template.push(optionsMenu);
-    template.push({ role: 'quit' });
+    template.push(shortcutMenuItem('quit', { role: 'quit' }));
   }
 
   const menu = Menu.buildFromTemplate(template);

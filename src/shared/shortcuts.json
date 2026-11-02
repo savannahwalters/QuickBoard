@@ -1,0 +1,268 @@
+[
+  {
+    "id": "save",
+    "label": "Save",
+    "group": "File",
+    "key": "s",
+    "modifiers": ["primary"],
+    "menu": true
+  },
+  {
+    "id": "save-as",
+    "label": "Save As...",
+    "group": "File",
+    "key": "s",
+    "modifiers": ["primary", "shift"],
+    "menu": true
+  },
+  {
+    "id": "load",
+    "label": "Load",
+    "group": "File",
+    "key": "o",
+    "modifiers": ["primary"],
+    "menu": true
+  },
+  {
+    "id": "export",
+    "label": "Export...",
+    "group": "File",
+    "key": "e",
+    "modifiers": ["primary"],
+    "menu": true
+  },
+  {
+    "id": "settings",
+    "label": "Settings",
+    "group": "Application",
+    "key": ",",
+    "modifiers": ["primary"],
+    "menu": true
+  },
+  {
+    "id": "close",
+    "label": "Close Window",
+    "group": "Application",
+    "key": "w",
+    "modifiers": ["primary"],
+    "menu": true
+  },
+  {
+    "id": "quit",
+    "label": "Quit QuickBoard",
+    "group": "Application",
+    "key": "q",
+    "modifiers": ["primary"],
+    "menu": true
+  },
+  {
+    "id": "undo",
+    "label": "Undo",
+    "group": "Editing",
+    "key": "z",
+    "modifiers": ["primary"],
+    "menu": true
+  },
+  {
+    "id": "redo",
+    "label": "Redo",
+    "group": "Editing",
+    "key": "z",
+    "modifiers": ["primary", "shift"],
+    "menu": true
+  },
+  { "id": "redo", "label": "Redo", "group": "Editing", "key": "y", "modifiers": ["primary"] },
+  {
+    "id": "cut",
+    "label": "Cut Text",
+    "group": "Editing",
+    "key": "x",
+    "modifiers": ["primary"],
+    "menu": true
+  },
+  {
+    "id": "copy",
+    "label": "Copy Text",
+    "group": "Editing",
+    "key": "c",
+    "modifiers": ["primary"],
+    "menu": true
+  },
+  {
+    "id": "paste",
+    "label": "Paste Text",
+    "group": "Editing",
+    "key": "v",
+    "modifiers": ["primary"],
+    "menu": true
+  },
+  {
+    "id": "select-all",
+    "label": "Select All Text",
+    "group": "Editing",
+    "key": "a",
+    "modifiers": ["primary"],
+    "menu": true
+  },
+  {
+    "id": "add-board",
+    "label": "Add Board",
+    "group": "Boards",
+    "key": "n",
+    "modifiers": ["primary"]
+  },
+  {
+    "id": "add-audio-lane",
+    "label": "Add Audio Lane",
+    "group": "Timeline",
+    "key": "n",
+    "modifiers": ["primary", "shift"]
+  },
+  {
+    "id": "duplicate-board",
+    "label": "Duplicate Board",
+    "group": "Boards",
+    "key": "d",
+    "modifiers": ["primary"]
+  },
+  {
+    "id": "delete-board",
+    "label": "Delete Board",
+    "group": "Boards",
+    "key": "backspace",
+    "modifiers": ["primary"]
+  },
+  {
+    "id": "clear-canvas",
+    "label": "Clear Canvas",
+    "group": "Canvas",
+    "key": "backspace",
+    "modifiers": ["primary", "shift"]
+  },
+  {
+    "id": "previous-board",
+    "label": "Previous Board",
+    "group": "Boards",
+    "key": ",",
+    "modifiers": []
+  },
+  { "id": "next-board", "label": "Next Board", "group": "Boards", "key": ".", "modifiers": [] },
+  {
+    "id": "first-board",
+    "label": "First Board",
+    "group": "Boards",
+    "key": "home",
+    "modifiers": ["primary"]
+  },
+  {
+    "id": "last-board",
+    "label": "Last Board",
+    "group": "Boards",
+    "key": ".",
+    "modifiers": ["primary"]
+  },
+  {
+    "id": "move-board-left",
+    "label": "Move Board Earlier",
+    "group": "Boards",
+    "key": "arrowleft",
+    "modifiers": ["shift"]
+  },
+  {
+    "id": "move-board-right",
+    "label": "Move Board Later",
+    "group": "Boards",
+    "key": "arrowright",
+    "modifiers": ["shift"]
+  },
+  {
+    "id": "playback",
+    "label": "Play / Pause",
+    "group": "Timeline",
+    "key": "space",
+    "modifiers": []
+  },
+  {
+    "id": "seek-left",
+    "label": "Seek Back One Second",
+    "group": "Timeline",
+    "key": "arrowleft",
+    "modifiers": []
+  },
+  {
+    "id": "seek-right",
+    "label": "Seek Forward One Second",
+    "group": "Timeline",
+    "key": "arrowright",
+    "modifiers": []
+  },
+  {
+    "id": "shorten-board",
+    "label": "Shorten Board",
+    "group": "Timeline",
+    "key": "arrowleft",
+    "modifiers": ["alt"]
+  },
+  {
+    "id": "lengthen-board",
+    "label": "Lengthen Board",
+    "group": "Timeline",
+    "key": "arrowright",
+    "modifiers": ["alt"]
+  },
+  {
+    "id": "timeline-zoom-in",
+    "label": "Zoom Timeline In",
+    "group": "Timeline",
+    "key": "+",
+    "modifiers": []
+  },
+  {
+    "id": "timeline-zoom-out",
+    "label": "Zoom Timeline Out",
+    "group": "Timeline",
+    "key": "-",
+    "modifiers": []
+  },
+  { "id": "select-tool", "label": "Selection Tool", "group": "Tools", "key": "s", "modifiers": [] },
+  { "id": "image-tool", "label": "Insert Image", "group": "Tools", "key": "i", "modifiers": [] },
+  { "id": "pencil-tool", "label": "Pencil Tool", "group": "Tools", "key": "d", "modifiers": [] },
+  { "id": "shape-tool", "label": "Rectangle Tool", "group": "Tools", "key": "h", "modifiers": [] },
+  { "id": "eraser-tool", "label": "Eraser Tool", "group": "Tools", "key": "e", "modifiers": [] },
+  { "id": "fill-tool", "label": "Fill Tool", "group": "Tools", "key": "f", "modifiers": [] },
+  {
+    "id": "next-subtool",
+    "label": "Next Tool Variant",
+    "group": "Tools",
+    "key": "n",
+    "modifiers": []
+  },
+  {
+    "id": "previous-subtool",
+    "label": "Previous Tool Variant",
+    "group": "Tools",
+    "key": "b",
+    "modifiers": []
+  },
+  {
+    "id": "activate-tool",
+    "label": "Zoom In / Insert Image (Active Tool)",
+    "group": "Tools",
+    "key": "enter",
+    "modifiers": []
+  },
+  {
+    "id": "activate-tool",
+    "label": "Zoom Out / Insert Image (Active Tool)",
+    "group": "Tools",
+    "key": "enter",
+    "modifiers": ["shift"]
+  },
+  {
+    "id": "next-tool-group",
+    "label": "Next Tool Group",
+    "group": "Tools",
+    "key": "tab",
+    "modifiers": []
+  }
+]

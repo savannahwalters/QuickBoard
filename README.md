@@ -35,6 +35,22 @@ npm start
 
 Then open http://localhost:4200
 
+## Keyboard Shortcuts
+
+Open **QuickBoard > Keyboard Shortcuts** on macOS (below About QuickBoard), or
+**File > Keyboard Shortcuts** on Windows/Linux. The searchable window is read-only.
+Command/Ctrl-comma opens Settings; Command/Ctrl-Home selects the first board.
+
+Bindings live in `src/shared/shortcuts.json`. The Electron menu, renderer handlers,
+canvas tools, and shortcuts window all use this registry. Customization is not yet supported.
+
+Shortcut regression checks:
+
+```bash
+npm test -- --watch=false
+node --test src/electron/menu.test.cjs
+```
+
 ## Project Structure
 
 - `src/` — Angular application source code
