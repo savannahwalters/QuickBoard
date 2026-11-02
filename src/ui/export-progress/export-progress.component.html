@@ -14,7 +14,6 @@
     >
       @if (status() === 'exporting') {
         <header class="dialog-header">
-          <p class="eyebrow">Export Status</p>
           <h3 class="title">Encoding Export</h3>
           @if (message()) {
             <p class="subtitle">{{ message() }}</p>
@@ -56,7 +55,6 @@
       } @else if (status() === 'success') {
         <header class="dialog-header centered">
           <div class="status-icon success-icon">✓</div>
-          <p class="eyebrow">Export Status</p>
           <h3 class="title">Export Complete</h3>
           <p class="subtitle">
             {{ frameCount() }} frame{{ frameCount() !== 1 ? 's' : '' }} saved successfully.
@@ -65,7 +63,6 @@
       } @else {
         <header class="dialog-header centered">
           <div class="status-icon error-icon">✕</div>
-          <p class="eyebrow">Export Status</p>
           <h3 class="title">Export Failed</h3>
           <p class="error-message">{{ message() }}</p>
         </header>

@@ -8,7 +8,6 @@ import { shortcutKeys, shortcuts } from 'src/shared/shortcuts';
     <div class="overlay" role="dialog" aria-modal="true" aria-labelledby="shortcuts-title">
       <div class="dialog">
         <header class="dialog-header">
-          <p class="eyebrow">Reference</p>
           <div class="header-row">
             <h1 class="title" id="shortcuts-title">Keyboard Shortcuts</h1>
             <button
