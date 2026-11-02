@@ -257,10 +257,36 @@ export class BoilService {
     seed: number,
     params: BoilParams
   ): Record<string, unknown> {
+    const serializableSnapshot = { ...snapshot };
+    const imageReferences: { collection: string; index: number; image: unknown }[] = [];
+    for (const collection of ['shapes', 'backgroundShapes']) {
+      const shapes = snapshot[collection];
+      if (!Array.isArray(shapes)) {
+        continue;
+      }
+      serializableSnapshot[collection] = shapes.map((shape: unknown, index) => {
+        if (!shape || typeof shape !== 'object' || !('data' in shape)) {
+          return shape;
+        }
+        const data = shape.data;
+        if (!data || typeof data !== 'object' || !('imageObject' in data)) {
+          return shape;
+        }
+        const { imageObject, ...serializableData } = data;
+        imageReferences.push({ collection, index, image: imageObject });
+        return { ...shape, data: serializableData };
+      });
+    }
+
     const clone =
       typeof structuredClone === 'function'
-        ? (structuredClone(snapshot) as Record<string, unknown>)
-        : (JSON.parse(JSON.stringify(snapshot)) as Record<string, unknown>);
+        ? (structuredClone(serializableSnapshot) as Record<string, unknown>)
+        : (JSON.parse(JSON.stringify(serializableSnapshot)) as Record<string, unknown>);
+
+    for (const { collection, index, image } of imageReferences) {
+      const shapes = clone[collection] as { data: Record<string, unknown> }[];
+      shapes[index].data['imageObject'] = image;
+    }
 
     const shapes = clone['shapes'];
     if (Array.isArray(shapes)) {

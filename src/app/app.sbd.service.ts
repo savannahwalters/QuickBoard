@@ -151,6 +151,7 @@ export class SbdService {
     if (!projectFile) throw new Error('Invalid .sbd file: missing project.json');
     const projectJson = await projectFile.async('string');
     const projectData = JSON.parse(projectJson);
+    const imageObjects = new Map<string, HTMLImageElement>();
 
     // Extract previews and convert to Blob URLs
     if (Array.isArray(projectData.boards)) {
@@ -181,13 +182,21 @@ export class SbdService {
                       const src = data['imageSrc'];
                       if (src.startsWith('assets/images/')) {
                         const imgFile = zip.file(src);
-                        if (imgFile) {
-                          const arrayBuffer = await imgFile.async('arraybuffer');
-                          const ext = src.split('.').pop()?.toLowerCase() ?? 'png';
-                          const mimeType = IMAGE_MIME_BY_EXT[ext] ?? 'image/png';
-                          const blob = new Blob([arrayBuffer], { type: mimeType });
-                          data['imageSrc'] = URL.createObjectURL(blob);
+                        if (!imgFile) {
+                          throw new Error(`Invalid .sbd file: missing image asset ${src}`);
                         }
+                        const arrayBuffer = await imgFile.async('arraybuffer');
+                        const ext = src.split('.').pop()?.toLowerCase() ?? 'png';
+                        const mimeType = IMAGE_MIME_BY_EXT[ext] ?? 'image/png';
+                        const blob = new Blob([arrayBuffer], { type: mimeType });
+                        data['imageSrc'] = URL.createObjectURL(blob);
+                      }
+                      const imageSrc = data['imageSrc'] as string;
+                      if (imageSrc.startsWith('blob:') || imageSrc.startsWith('data:image/')) {
+                        const image = new Image();
+                        image.src = imageSrc;
+                        await image.decode();
+                        imageObjects.set(imageSrc, image);
                       }
                     }
                   }
@@ -222,7 +231,7 @@ export class SbdService {
     );
 
     // Restore store state then reload Tone.js players from the extracted blobs.
-    this.store.loadFromJson(JSON.stringify(projectData));
+    this.store.loadFromJson(JSON.stringify(projectData), imageObjects);
     await this.audio.loadFromSavedTracks(this.store.audioTracks(), blobMap);
   }
 }

@@ -76,7 +76,7 @@ export interface LiterallyCanvas {
   };
   createShape(type: string, args: Record<string, unknown>): unknown;
   JSONToShape(shape: Record<string, unknown>): unknown;
-  snapshotJSONToShapes(shapes: Record<string, unknown>[]): unknown[];
+  snapshotJSONToShapes(snapshot: string): unknown[];
   shapeToJSON(shape: unknown): Record<string, unknown>;
 }
 

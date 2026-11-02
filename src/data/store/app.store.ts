@@ -167,9 +167,17 @@ export const AppStore = signalStore(
         );
       },
 
-      loadFromJson(jsonString: string) {
+      loadFromJson(jsonString: string, imageObjects?: ReadonlyMap<string, HTMLImageElement>) {
         try {
-          const data = JSON.parse(jsonString) as PersistedProjectData;
+          const data = JSON.parse(jsonString, (_key: string, value: unknown) => {
+            if (value && typeof value === 'object' && 'imageSrc' in value) {
+              const image = imageObjects?.get(String(value.imageSrc));
+              if (image) {
+                return { ...value, imageObject: image };
+              }
+            }
+            return value;
+          }) as PersistedProjectData;
           if (!data || !Array.isArray(data.boards)) {
             throw new Error('Invalid JSON structure: "boards" array is required');
           }
@@ -197,17 +205,17 @@ export const AppStore = signalStore(
                   : (wrappedSnapshot as Record<string, unknown>);
 
               // Only attempt pre-hydration if LC is globally available (standard browser environment)
-              if (typeof LC !== 'undefined' && LC.snapshotJSONToShapes) {
+              if (typeof LC !== 'undefined' && LC.JSONToShape) {
                 try {
                   shapes = parsedCanvasData['shapes']
-                    ? (LC.snapshotJSONToShapes(
-                        parsedCanvasData['shapes'] as Record<string, unknown>[]
-                      ) as unknown[])
+                    ? (parsedCanvasData['shapes'] as Record<string, unknown>[]).map((shape) =>
+                        LC.JSONToShape(shape)
+                      )
                     : [];
                   backgroundShapes = parsedCanvasData['backgroundShapes']
-                    ? (LC.snapshotJSONToShapes(
-                        parsedCanvasData['backgroundShapes'] as Record<string, unknown>[]
-                      ) as unknown[])
+                    ? (parsedCanvasData['backgroundShapes'] as Record<string, unknown>[]).map(
+                        (shape) => LC.JSONToShape(shape)
+                      )
                     : [];
                 } catch (e) {
                   console.warn('Failed to pre-hydrate LC shapes for board', b.id, e);
