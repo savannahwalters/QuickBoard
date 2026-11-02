@@ -37,7 +37,6 @@
         (click)="selectMode(option.id)"
         (keydown)="onTabKeydown($event, index)"
       >
-        <i [class]="'fa ' + option.icon" aria-hidden="true"></i>
         <span>{{ option.name }}</span>
       </button>
       }
@@ -78,64 +77,70 @@
           [value]="value()"
           (selectionChange)="onSelectionChange($event)"
         />
-        } @if (mode() !== 'wheel') {
-        <div class="slider-row">
-          <label class="slider-label" [attr.for]="hueId">Hue</label>
-          <input
-            [id]="hueId"
-            type="range"
-            min="0"
-            max="360"
-            step="1"
-            [value]="hue()"
-            (input)="onHueInput($event)"
-            class="color-slider hue-slider"
-            [style.--slider-background]="hueGradient()"
-            [attr.aria-label]="label() + ' hue'"
-          />
-          @if (mode() === 'sliders') {
-          <output class="channel-value" [attr.for]="hueId">{{ hue().toFixed(0) }}&deg;</output>
+        }
+        <div class="channel-sliders" [class.vertical-channels]="mode() === 'sliders'">
+          @if (mode() !== 'wheel') {
+          <div class="slider-row">
+            <label class="slider-label" [attr.for]="hueId">Hue</label>
+            <input
+              [id]="hueId"
+              type="range"
+              min="0"
+              max="360"
+              step="1"
+              [value]="hue()"
+              (input)="onHueInput($event)"
+              class="color-slider hue-slider"
+              [attr.aria-orientation]="mode() === 'sliders' ? 'vertical' : 'horizontal'"
+              [style.--slider-background]="hueGradient()"
+              [attr.aria-label]="label() + ' hue'"
+            />
+            @if (mode() === 'sliders') {
+            <output class="channel-value" [attr.for]="hueId">{{ hue().toFixed(0) }}&deg;</output>
+            }
+          </div>
+          } @if (mode() === 'sliders') {
+          <div class="slider-row">
+            <label class="slider-label" [attr.for]="saturationId">Saturation</label>
+            <input
+              [id]="saturationId"
+              type="range"
+              min="0"
+              max="100"
+              step="1"
+              [value]="saturationPercentValue()"
+              (input)="onChannelInput($event, 's')"
+              class="color-slider"
+              aria-orientation="vertical"
+              [style.--slider-background]="saturationGradient()"
+              [attr.aria-label]="label() + ' saturation'"
+            />
+            <output class="channel-value" [attr.for]="saturationId"
+              >{{ saturationPercentValue() }}%</output
+            >
+          </div>
+          } @if (mode() === 'sliders' || mode() === 'wheel') {
+          <div class="slider-row">
+            <label class="slider-label" [attr.for]="valueId">Value</label>
+            <input
+              [id]="valueId"
+              type="range"
+              min="0"
+              max="100"
+              step="1"
+              [value]="brightnessPercentValue()"
+              (input)="onChannelInput($event, 'v')"
+              class="color-slider"
+              [attr.aria-orientation]="mode() === 'sliders' ? 'vertical' : 'horizontal'"
+              [style.--slider-background]="valueGradient()"
+              [attr.aria-label]="label() + ' value'"
+            />
+            <output class="channel-value" [attr.for]="valueId"
+              >{{ brightnessPercentValue() }}%</output
+            >
+          </div>
           }
         </div>
-        } @if (mode() === 'sliders') {
-        <div class="slider-row">
-          <label class="slider-label" [attr.for]="saturationId">Saturation</label>
-          <input
-            [id]="saturationId"
-            type="range"
-            min="0"
-            max="100"
-            step="1"
-            [value]="saturationPercentValue()"
-            (input)="onChannelInput($event, 's')"
-            class="color-slider"
-            [style.--slider-background]="saturationGradient()"
-            [attr.aria-label]="label() + ' saturation'"
-          />
-          <output class="channel-value" [attr.for]="saturationId"
-            >{{ saturationPercentValue() }}%</output
-          >
-        </div>
-        } @if (mode() === 'sliders' || mode() === 'wheel') {
-        <div class="slider-row">
-          <label class="slider-label" [attr.for]="valueId">Value</label>
-          <input
-            [id]="valueId"
-            type="range"
-            min="0"
-            max="100"
-            step="1"
-            [value]="brightnessPercentValue()"
-            (input)="onChannelInput($event, 'v')"
-            class="color-slider"
-            [style.--slider-background]="valueGradient()"
-            [attr.aria-label]="label() + ' value'"
-          />
-          <output class="channel-value" [attr.for]="valueId"
-            >{{ brightnessPercentValue() }}%</output
-          >
-        </div>
-        }
       </div>
     </div>
 

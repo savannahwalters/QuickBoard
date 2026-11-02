@@ -56,6 +56,17 @@ describe('color picker layouts', () => {
     expect(
       fixture.nativeElement.querySelectorAll('.selector-body input[type="range"]')
     ).toHaveLength(3);
+    expect(
+      fixture.nativeElement.querySelectorAll(
+        '.vertical-channels input[aria-orientation="vertical"]'
+      )
+    ).toHaveLength(3);
+    expect(
+      fixture.nativeElement.querySelector('.alpha-slider').getAttribute('aria-orientation')
+    ).not.toBe('vertical');
+    expect(component.hueGradient()).toContain('to top');
+    expect(component.valueGradient()).toContain('to top');
+    expect(component.alphaGradient()).toContain('to right');
     const input = fixture.nativeElement.querySelector(`#${component.valueId}`) as HTMLInputElement;
     input.value = '50';
     input.dispatchEvent(new Event('input'));
@@ -99,6 +110,11 @@ describe('color picker layouts', () => {
     expect(image.data[center + 3]).toBe(255);
     expect(fixture.nativeElement.querySelector(`#${component.valueId}`)).not.toBeNull();
     expect(fixture.nativeElement.querySelector(`#${component.hueId}`)).toBeNull();
+    expect(
+      fixture.nativeElement.querySelector(`#${component.valueId}`).getAttribute('aria-orientation')
+    ).toBe('horizontal');
+    expect(fixture.nativeElement.querySelector('.vertical-channels')).toBeNull();
+    expect(component.valueGradient()).toContain('to right');
   });
 
   it('maps the square midpoint to its displayed value', () => {

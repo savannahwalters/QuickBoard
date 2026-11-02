@@ -32,8 +32,7 @@ interface Hsv {
   v: number;
 }
 
-const HUE_GRADIENT =
-  'linear-gradient(to right, #ff0000, #ffff00, #00ff00, #00ffff, #0000ff, #ff00ff, #ff0000)';
+const HUE_COLORS = '#ff0000, #ffff00, #00ff00, #00ffff, #0000ff, #ff00ff, #ff0000';
 let colorPickerId = 0;
 
 @Component({
@@ -56,11 +55,11 @@ export class ColorPickerComponent {
 
   readonly isOpen = signal(false);
   readonly mode = signal<PickerMode>('triangle');
-  readonly modes: { id: PickerMode; name: string; icon: string }[] = [
-    { id: 'square', name: 'HSV Square', icon: 'fa-square' },
-    { id: 'triangle', name: 'HSV Triangle', icon: 'fa-play' },
-    { id: 'wheel', name: 'HSV Wheel', icon: 'fa-circle' },
-    { id: 'sliders', name: 'HSV Sliders', icon: 'fa-sliders' },
+  readonly modes: { id: PickerMode; name: string }[] = [
+    { id: 'square', name: 'Square' },
+    { id: 'triangle', name: 'Triangle' },
+    { id: 'wheel', name: 'Wheel' },
+    { id: 'sliders', name: 'Sliders' },
   ];
   readonly panelLeft = signal(8);
   readonly panelTop = signal(8);
@@ -88,7 +87,12 @@ export class ColorPickerComponent {
   private readonly isEditingHex = signal(false);
   private readonly isEditingAlpha = signal(false);
 
-  readonly hueGradient = computed(() => HUE_GRADIENT);
+  readonly channelGradientDirection = computed(() =>
+    this.mode() === 'sliders' ? 'to top' : 'to right'
+  );
+  readonly hueGradient = computed(
+    () => `linear-gradient(${this.channelGradientDirection()}, ${HUE_COLORS})`
+  );
   readonly svBackground = computed(() => {
     const hueColor = `hsl(${Math.round(this.hue())}, 100%, 50%)`;
     return `linear-gradient(to bottom, rgba(0, 0, 0, 0) 0%, #000000 100%), linear-gradient(to right, #ffffff 0%, ${hueColor} 100%)`;
@@ -106,11 +110,13 @@ export class ColorPickerComponent {
   readonly saturationGradient = computed(() => {
     const start = rgbToHex(hsvToRgb(this.hue(), 0, this.value()));
     const end = rgbToHex(hsvToRgb(this.hue(), 1, this.value()));
-    return `linear-gradient(to right, ${start}, ${end})`;
+    return `linear-gradient(${this.channelGradientDirection()}, ${start}, ${end})`;
   });
   readonly valueGradient = computed(
     () =>
-      `linear-gradient(to right, #000000, ${rgbToHex(hsvToRgb(this.hue(), this.saturation(), 1))})`
+      `linear-gradient(${this.channelGradientDirection()}, #000000, ${rgbToHex(
+        hsvToRgb(this.hue(), this.saturation(), 1)
+      )})`
   );
   readonly hexValue = computed(() => {
     const rgb = hsvToRgb(this.hue(), this.saturation(), this.value());
