@@ -51,15 +51,6 @@
   gap: 4px;
 }
 
-.eyebrow {
-  margin: 0;
-  font-size: 10px;
-  letter-spacing: 1.4px;
-  font-weight: 700;
-  text-transform: uppercase;
-  color: var(--accent);
-}
-
 .title {
   margin: 0;
   font-size: 20px;

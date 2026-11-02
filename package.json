@@ -63,12 +63,13 @@
       "electron-main.js",
       "src/electron/**/*",
       "src/shared/themes.json",
+      "src/shared/shortcuts.json",
       "package.json"
     ],
     "fileAssociations": [
       {
         "ext": "sbd",
-        "name": "QuickBoard Board",
+        "name": "QuickBoard Project",
         "description": "QuickBoard storyboard file",
         "mimeType": "application/x-quickboard-sbd",
         "role": "Editor"

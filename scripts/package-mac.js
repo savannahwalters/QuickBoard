@@ -8,11 +8,23 @@
  * Run via: npm run electron:build:mac
  */
 const { packager } = require('@electron/packager');
-const { execSync, spawnSync } = require('child_process');
+const { execFileSync, spawnSync } = require('child_process');
+const fs = require('fs');
 const path = require('path');
 
 const root = path.join(__dirname, '..');
-const { version } = require('../package.json');
+const { build, version } = require('../package.json');
+const fileTypes = build.fileAssociations.map(({ ext, name, mimeType, role }) => {
+  const identifier = `com.quickboard.${ext}`;
+
+  return {
+    identifier,
+    name,
+    mimeType,
+    role,
+    ext,
+  };
+});
 
 function getMacOSMajorVersion() {
   const result = spawnSync('sw_vers', ['-productVersion'], { encoding: 'utf8' });
@@ -31,9 +43,9 @@ console.log(
     : `macOS ${macOSVersion} — using .icns only (.icon compilation requires macOS 26+).`,
 );
 
-// Always pass the .icns to packager — it expects a single file path.
-// The .icon bundle (Icon Composer) is handled separately after packaging.
-const icon = path.join(root, 'branding', 'QuickBoard_icon_macOSLegacy.icns');
+const legacyIcon = path.join(root, 'branding', 'QuickBoard_icon_macOSLegacy.icns');
+const iconComposer = path.join(root, 'branding', 'QuickBoard_icon_macOS.icon');
+const icon = supportsIconComposer ? [legacyIcon, iconComposer] : legacyIcon;
 
 packager({
   dir: root,
@@ -44,8 +56,25 @@ packager({
   appCategoryType: 'public.app-category.productivity',
   name: 'QuickBoard',
   icon,
+  extendInfo: {
+    UTExportedTypeDeclarations: fileTypes.map(({ identifier, name, mimeType, ext }) => ({
+      UTTypeIdentifier: identifier,
+      UTTypeDescription: name,
+      UTTypeConformsTo: ['public.data'],
+      UTTypeTagSpecification: {
+        'public.filename-extension': [ext],
+        'public.mime-type': mimeType,
+      },
+    })),
+    CFBundleDocumentTypes: fileTypes.map(({ identifier, name, role }) => ({
+      CFBundleTypeName: name,
+      CFBundleTypeRole: role,
+      LSHandlerRank: 'Owner',
+      LSItemContentTypes: [identifier],
+    })),
+  },
   ignore: [
-    /^\/src\/(?!electron)/,
+    /^\/src\/(?!electron(?:\/|$)|shared(?:\/(?:themes|shortcuts)\.json)?\/?$)/,
     /^\/branding/,
     /^\/scripts/,
     /^\/android/,
@@ -70,21 +99,6 @@ packager({
   .then((appPaths) => {
     console.log('Packaged .app bundles:', appPaths.join(', '));
 
-    // On macOS 26+, copy the Icon Composer (.icon) bundle into each .app's
-    // Resources directory for dynamic/adaptive icon support, then re-sign
-    // so the ad-hoc code signature stays valid (required for arm64).
-    if (supportsIconComposer) {
-      const iconBundleSrc = path.join(root, 'branding', 'QuickBoard_icon_macOS.icon');
-      for (const appDir of appPaths) {
-        const appBundle = path.join(appDir, 'QuickBoard.app');
-        const resourcesDir = path.join(appBundle, 'Contents', 'Resources');
-        console.log(`Copying .icon bundle into ${path.basename(appDir)}...`);
-        execSync(`cp -R "${iconBundleSrc}" "${resourcesDir}/"`, { stdio: 'inherit' });
-        console.log(`Re-signing ${path.basename(appDir)}...`);
-        execSync(`codesign --force --deep --sign - "${appBundle}"`, { stdio: 'inherit' });
-      }
-    }
-
     // Wrap each .app bundle in a .dmg so CI artifacts match expected output.
     // appPaths entries look like: release/QuickBoard-darwin-x64
     const releaseDir = path.join(root, 'release');
@@ -99,12 +113,23 @@ packager({
         dmgName = 'quickboard-mac-intel.dmg';
       }
       const dmgPath = path.join(releaseDir, dmgName);
+      const stagingDir = fs.mkdtempSync(path.join(releaseDir, '.quickboard-dmg-'));
+      const stagedAppPath = path.join(stagingDir, 'QuickBoard.app');
       console.log(`Creating ${path.basename(dmgPath)}...`);
-      execSync(
-        `hdiutil create -volname "QuickBoard" -srcfolder "${appDir}" -ov -format UDZO "${dmgPath}"`,
-        { stdio: 'inherit' },
-      );
-      console.log(`Created ${dmgPath}`);
+      try {
+        execFileSync('ditto', [path.join(appDir, 'QuickBoard.app'), stagedAppPath], {
+          stdio: 'inherit',
+        });
+        fs.symlinkSync('/Applications', path.join(stagingDir, 'Applications'));
+        execFileSync(
+          'hdiutil',
+          ['create', '-volname', 'QuickBoard', '-srcfolder', stagingDir, '-ov', '-format', 'UDZO', dmgPath],
+          { stdio: 'inherit' },
+        );
+        console.log(`Created ${dmgPath}`);
+      } finally {
+        fs.rmSync(stagingDir, { recursive: true, force: true });
+      }
     }
   })
   .catch((err) => {

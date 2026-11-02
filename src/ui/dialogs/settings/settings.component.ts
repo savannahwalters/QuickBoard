@@ -115,7 +115,7 @@ interface SettingsSection {
   standalone: true,
   imports: [CommonModule, FormsModule, ColorPickerComponent],
   templateUrl: './settings.component.html',
-  styleUrl: './settings.component.css',
+  styleUrls: ['../dialog-window.css', './settings.component.css'],
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class SettingsComponent implements OnInit, OnDestroy {
