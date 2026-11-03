@@ -8,11 +8,18 @@ export function hsvToRgb(
   saturation: number,
   value: number
 ): { r: number; g: number; b: number } {
+  const rgb = hsvToRgbChannels(hue, saturation, value);
+  return { r: Math.round(rgb.r), g: Math.round(rgb.g), b: Math.round(rgb.b) };
+}
+
+export function hsvToRgbChannels(
+  hue: number,
+  saturation: number,
+  value: number
+): { r: number; g: number; b: number } {
   const channel = (offset: number) => {
     const sector = (offset + (((hue % 360) + 360) % 360) / 60) % 6;
-    return Math.round(
-      255 * value * (1 - saturation * Math.max(0, Math.min(sector, 4 - sector, 1)))
-    );
+    return 255 * value * (1 - saturation * Math.max(0, Math.min(sector, 4 - sector, 1)));
   };
   return { r: channel(5), g: channel(3), b: channel(1) };
 }

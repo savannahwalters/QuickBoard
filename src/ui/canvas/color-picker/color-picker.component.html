@@ -16,12 +16,16 @@
 
   @if (isOpen()) {
   <div
+    #panel
     class="color-panel"
     [style.left.px]="panelLeft()"
     [style.top.px]="panelTop()"
     role="dialog"
     [id]="panelId"
     [attr.aria-label]="label() + ' color picker'"
+    (keydown.tab)="$event.stopPropagation()"
+    (keydown.space)="$event.stopPropagation()"
+    (keydown.enter)="$event.stopPropagation()"
   >
     <div class="picker-tabs" role="tablist" aria-label="Color selector layout">
       @for (option of modes; track option.id; let index = $index) {

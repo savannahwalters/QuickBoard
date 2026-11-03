@@ -8,13 +8,10 @@ import {
   output,
   viewChild,
 } from '@angular/core';
-import {
-  hsvToRgb,
-  triangleColor,
-  trianglePoint,
-  wheelColor,
-  wheelPoint,
-} from './color-picker-geometry';
+import { triangleColor, trianglePoint, wheelColor, wheelPoint } from './color-picker-geometry';
+import { getColorPickerRaster } from './color-picker-raster';
+
+let selectorId = 0;
 
 export interface SelectorChange {
   h?: number;
@@ -31,15 +28,12 @@ export interface SelectorChange {
         #surface
         width="384"
         height="384"
-        role="slider"
+        role="group"
         tabindex="0"
-        aria-valuemin="0"
-        aria-valuemax="100"
         [attr.aria-label]="
           label() + (mode() === 'triangle' ? ' saturation and value' : ' hue and saturation')
         "
-        [attr.aria-valuenow]="saturation() * 100"
-        [attr.aria-valuetext]="valueText()"
+        [attr.aria-description]="valueText()"
         (pointerdown)="startDrag($event)"
         (pointermove)="moveDrag($event)"
         (pointerup)="endDrag($event)"
@@ -52,6 +46,27 @@ export interface SelectorChange {
         [style.left.%]="handle().x * 100"
         [style.top.%]="handle().y * 100"
       ></span>
+      <div class="accessible-channels">
+        @for (channel of accessibleChannels(); track channel.key) {
+        <div class="accessible-channel">
+          <label [attr.for]="channelId + '-' + channel.key">{{ channel.label }}</label>
+          <input
+            type="range"
+            [id]="channelId + '-' + channel.key"
+            min="0"
+            [max]="channel.max"
+            step="1"
+            [value]="channel.value"
+            [attr.aria-label]="label() + ' ' + channel.label.toLowerCase()"
+            [attr.aria-valuetext]="channel.value.toFixed(0) + channel.unit"
+            (input)="onAccessibleInput($event, channel.key)"
+          />
+          <output [attr.for]="channelId + '-' + channel.key"
+            >{{ channel.value.toFixed(0) }}{{ channel.unit }}</output
+          >
+        </div>
+        }
+      </div>
     </div>
   `,
   styles: `
@@ -60,6 +75,11 @@ export interface SelectorChange {
     canvas { display: block; width: 100%; height: 100%; touch-action: none; cursor: crosshair; border-radius: 4px; }
     canvas:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
     .handle { position: absolute; width: 10px; height: 10px; border: 2px solid white; border-radius: 50%; box-shadow: 0 0 0 1px black; transform: translate(-50%, -50%); pointer-events: none; }
+    .accessible-channels { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+    .accessible-channels:focus-within { width: auto; height: auto; left: 0; right: 0; bottom: 0; padding: 6px; clip-path: none; overflow: visible; background: var(--bg-panel); color: var(--text-default); border: 1px solid var(--border-default); border-radius: 4px; }
+    .accessible-channel { display: grid; grid-template-columns: 64px minmax(0, 1fr) 36px; align-items: center; gap: 4px; font-size: 10px; }
+    .accessible-channel input { min-width: 0; width: 100%; }
+    .accessible-channel output { text-align: right; }
   `,
 })
 export class CircularColorSelectorComponent {
@@ -70,6 +90,30 @@ export class CircularColorSelectorComponent {
   readonly value = input.required<number>();
   readonly selectionChange = output<SelectorChange>();
   readonly surface = viewChild<ElementRef<HTMLCanvasElement>>('surface');
+  readonly channelId = `circular-selector-channel-${++selectorId}`;
+  readonly accessibleChannels = computed(() =>
+    this.mode() === 'triangle'
+      ? [
+          {
+            key: 's' as const,
+            label: 'Saturation',
+            value: this.saturation() * 100,
+            max: 100,
+            unit: '%',
+          },
+          { key: 'v' as const, label: 'Value', value: this.value() * 100, max: 100, unit: '%' },
+        ]
+      : [
+          { key: 'h' as const, label: 'Hue', value: this.hue(), max: 360, unit: ' degrees' },
+          {
+            key: 's' as const,
+            label: 'Saturation',
+            value: this.saturation() * 100,
+            max: 100,
+            unit: '%',
+          },
+        ]
+  );
   readonly handle = computed(() =>
     this.mode() === 'triangle'
       ? trianglePoint(this.saturation(), this.value())
@@ -83,6 +127,7 @@ export class CircularColorSelectorComponent {
   );
   private pointerId: number | null = null;
   private dragRegion: 'triangle' | 'wheel' = 'triangle';
+  private image: ImageData | null = null;
 
   constructor() {
     effect(() => {
@@ -93,30 +138,17 @@ export class CircularColorSelectorComponent {
       const context = canvas?.getContext('2d');
       if (!canvas || !context) return;
       const size = canvas.width;
-      const image = context.createImageData(size, size);
-      for (let row = 0; row < size; row++) {
-        for (let column = 0; column < size; column++) {
-          const point = { x: (column + 0.5) / size, y: (row + 0.5) / size };
-          const radius = Math.hypot(point.x - 0.5, point.y - 0.5);
-          let rgb: { r: number; g: number; b: number };
-          if (mode === 'wheel') {
-            if (radius > 0.48) continue;
-            const color = wheelColor(point);
-            rgb = hsvToRgb(color.h, color.s, value);
-          } else {
-            const color = triangleColor(point, false);
-            if (!color) continue;
-            rgb = hsvToRgb(hue, color.s, color.v);
-          }
-          const offset = (row * size + column) * 4;
-          image.data[offset] = rgb.r;
-          image.data[offset + 1] = rgb.g;
-          image.data[offset + 2] = rgb.b;
-          image.data[offset + 3] = 255;
-        }
-      }
+      if (!this.image || this.image.width !== size)
+        this.image = context.createImageData(size, size);
+      const image = this.image;
+      getColorPickerRaster(mode, size).paint(image.data, hue, value);
       context.putImageData(image, 0, 0);
     });
+  }
+
+  onAccessibleInput(event: Event, channel: 'h' | 's' | 'v'): void {
+    const value = (event.target as HTMLInputElement).valueAsNumber;
+    this.selectionChange.emit({ [channel]: channel === 'h' ? value : value / 100 });
   }
 
   startDrag(event: PointerEvent): void {

@@ -4,6 +4,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ColorPickerComponent } from './color-picker.component';
 import { CircularColorSelectorComponent } from './circular-color-selector.component';
 import { hsvToRgb } from './color-picker-geometry';
+import { getColorPickerRaster } from './color-picker-raster';
+import { triangleColor, wheelColor } from './color-picker-geometry';
 
 describe('color picker layouts', () => {
   let fixture: ComponentFixture<ColorPickerComponent>;
@@ -262,14 +264,143 @@ describe('color picker layouts', () => {
   });
 
   it('clamps the popup to the viewport even when the toolbar is off-screen', () => {
-    component.toggleOpen();
     vi.spyOn(fixture.nativeElement, 'getBoundingClientRect').mockReturnValue({
       right: 1400,
-      bottom: 70,
-      top: 42,
+      bottom: window.innerHeight + 228,
+      top: window.innerHeight + 200,
     } as DOMRect);
-    component.toggleOpen();
+    vi.spyOn(
+      fixture.nativeElement.querySelector('.color-panel'),
+      'getBoundingClientRect'
+    ).mockReturnValue({ width: 240, height: 200 } as DOMRect);
+    component.onWindowResize();
     expect(component.panelLeft()).toBeLessThanOrEqual(window.innerWidth - 240 - 8);
     expect(component.panelLeft()).toBeGreaterThanOrEqual(8);
+    expect(component.panelTop()).toBe(window.innerHeight - 200 - 8);
+  });
+
+  it('uses the rendered height to place a panel below the trigger when it fits', () => {
+    const bottom = window.innerHeight - 222;
+    vi.spyOn(fixture.nativeElement, 'getBoundingClientRect').mockReturnValue({
+      right: 300,
+      top: bottom - 28,
+      bottom,
+    } as DOMRect);
+    const bounds = vi
+      .spyOn(fixture.nativeElement.querySelector('.color-panel'), 'getBoundingClientRect')
+      .mockReturnValue({ width: 240, height: 200 } as DOMRect);
+    component.onWindowResize();
+    expect(component.panelTop()).toBe(bottom + 6);
+    bounds.mockReturnValue({ width: 240, height: 300 } as DOMRect);
+    component.selectMode('sliders');
+    fixture.detectChanges();
+    expect(component.panelTop()).toBe(Math.max(8, bottom - 28 - 300 - 6));
+  });
+
+  it('closes on ancestor scroll but not on internal or unrelated scrolling', () => {
+    const panel = fixture.nativeElement.querySelector('.color-panel') as HTMLElement;
+    panel.dispatchEvent(new Event('scroll'));
+    expect(component.isOpen()).toBe(true);
+    const unrelated = document.createElement('div');
+    document.body.appendChild(unrelated);
+    unrelated.dispatchEvent(new Event('scroll'));
+    expect(component.isOpen()).toBe(true);
+    unrelated.remove();
+    fixture.nativeElement.parentElement.dispatchEvent(new Event('scroll'));
+    expect(component.isOpen()).toBe(false);
+    fixture.detectChanges();
+    component.toggleOpen();
+    fixture.detectChanges();
+    document.dispatchEvent(new Event('scroll'));
+    expect(component.isOpen()).toBe(false);
+  });
+
+  it('keeps focus and activation keys inside the picker without preventing native behavior', () => {
+    const shortcut = vi.fn();
+    fixture.nativeElement.addEventListener('keydown', shortcut);
+    const tab = fixture.nativeElement.querySelector('[role="tab"]') as HTMLButtonElement;
+    for (const key of ['Tab', ' ', 'Enter']) {
+      const event = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true });
+      tab.dispatchEvent(event);
+      expect(event.defaultPrevented).toBe(false);
+    }
+    expect(shortcut).not.toHaveBeenCalled();
+  });
+
+  it('exposes independent native channel controls for both circular selector modes', () => {
+    for (const mode of ['triangle', 'wheel'] as const) {
+      component.selectMode(mode);
+      fixture.detectChanges();
+      const selector = fixture.nativeElement.querySelector(
+        'app-circular-color-selector'
+      ) as HTMLElement;
+      const inputs = selector.querySelectorAll<HTMLInputElement>('input[type="range"]');
+      expect(inputs).toHaveLength(2);
+      expect(selector.querySelector('canvas')?.getAttribute('role')).toBe('group');
+      expect(inputs[0].getAttribute('aria-label')).toBe(
+        mode === 'triangle' ? 'Stroke saturation' : 'Stroke hue'
+      );
+      expect(inputs[1].getAttribute('aria-label')).toBe(
+        mode === 'triangle' ? 'Stroke value' : 'Stroke saturation'
+      );
+      inputs[0].value = '25';
+      inputs[0].dispatchEvent(new Event('input'));
+      inputs[1].value = '60';
+      inputs[1].dispatchEvent(new Event('input'));
+      fixture.detectChanges();
+      if (mode === 'triangle') {
+        expect(component.saturation()).toBe(0.25);
+        expect(component.value()).toBe(0.6);
+      } else {
+        expect(component.hue()).toBe(25);
+        expect(component.saturation()).toBe(0.6);
+      }
+      expect(inputs[1].value).toBe('60');
+      expect(component.alpha()).toBe(0.4);
+    }
+  });
+
+  it('reuses image buffers and cached geometry during hue and value changes', () => {
+    for (const mode of ['triangle', 'wheel'] as const) {
+      component.selectMode(mode);
+      fixture.detectChanges();
+      const initialImage = putImageData.mock.calls.at(-1)![0];
+      const angle = vi.spyOn(Math, 'atan2');
+      const radius = vi.spyOn(Math, 'hypot');
+      component.onSelectionChange(mode === 'wheel' ? { v: 0.25 } : { h: 150 });
+      fixture.detectChanges();
+      expect(putImageData.mock.calls.at(-1)![0]).toBe(initialImage);
+      expect(angle).not.toHaveBeenCalled();
+      expect(radius).not.toHaveBeenCalled();
+      angle.mockRestore();
+      radius.mockRestore();
+    }
+  });
+
+  it('keeps cached raster pixels consistent with HSV conversion for both modes', () => {
+    const size = 32;
+    const data = new Uint8ClampedArray(size * size * 4);
+    for (const mode of ['triangle', 'wheel'] as const) {
+      const raster = getColorPickerRaster(mode, size);
+      expect(getColorPickerRaster(mode, size)).toBe(raster);
+      for (const hue of [0, 123.4, 275]) {
+        raster.paint(data, hue, 0.6);
+        for (const [column, row] of [
+          [16, 16],
+          [16, 5],
+          [8, 24],
+        ]) {
+          const point = { x: (column + 0.5) / size, y: (row + 0.5) / size };
+          const triangle = triangleColor(point, false)!;
+          const wheel = wheelColor(point);
+          const rgb =
+            mode === 'triangle'
+              ? hsvToRgb(hue, triangle.s, triangle.v)
+              : hsvToRgb(wheel.h, wheel.s, 0.6);
+          const offset = (row * size + column) * 4;
+          expect(Array.from(data.slice(offset, offset + 4))).toEqual([rgb.r, rgb.g, rgb.b, 255]);
+        }
+      }
+    }
   });
 });

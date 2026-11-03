@@ -2,6 +2,7 @@ import {
   ChangeDetectionStrategy,
   Component,
   ElementRef,
+  afterRenderEffect,
   computed,
   effect,
   inject,
@@ -79,6 +80,7 @@ export class ColorPickerComponent {
   readonly modePanelId = `color-picker-mode-${colorPickerId}`;
 
   readonly svArea = viewChild<ElementRef<HTMLElement>>('svArea');
+  readonly panel = viewChild<ElementRef<HTMLElement>>('panel');
 
   private readonly isDragging = signal(false);
   private readonly activePointerId = signal<number | null>(null);
@@ -132,6 +134,27 @@ export class ColorPickerComponent {
   });
 
   constructor() {
+    afterRenderEffect(() => {
+      const panel = this.panel();
+      const open = this.isOpen();
+      this.mode();
+      if (panel && open) untracked(() => this.updatePanelPosition());
+    });
+
+    effect((onCleanup) => {
+      if (!this.isOpen()) return;
+      const document = this.host.nativeElement.ownerDocument;
+      const onScroll = (event: Event) => {
+        const target = event.target as Node | null;
+        if (!target?.contains(this.host.nativeElement)) return;
+        this.isOpen.set(false);
+        this.isDragging.set(false);
+        this.activePointerId.set(null);
+      };
+      document.addEventListener('scroll', onScroll, true);
+      onCleanup(() => document.removeEventListener('scroll', onScroll, true));
+    });
+
     effect(() => {
       const incoming = this.color();
       if (this.ignoreNextColorSync) {
@@ -155,9 +178,6 @@ export class ColorPickerComponent {
   }
 
   toggleOpen(): void {
-    if (!this.isOpen()) {
-      this.updatePanelPosition();
-    }
     this.isOpen.set(!this.isOpen());
   }
 
@@ -166,17 +186,19 @@ export class ColorPickerComponent {
   }
 
   private updatePanelPosition(): void {
+    const panel = this.panel()?.nativeElement;
+    if (!panel) return;
     const trigger = this.host.nativeElement;
     const rect = trigger.getBoundingClientRect();
-    const panelWidth = Math.min(240, window.innerWidth - 24);
-    const panelHeight = Math.min(400, window.innerHeight - 16);
-    this.panelLeft.set(clamp(rect.right - panelWidth, 8, window.innerWidth - panelWidth - 8));
-    const below = rect.bottom + 6;
-    this.panelTop.set(
-      below + panelHeight <= window.innerHeight - 8
-        ? below
-        : Math.max(8, rect.top - panelHeight - 6)
+    const bounds = panel.getBoundingClientRect();
+    const panelWidth = Math.min(bounds.width, Math.max(0, window.innerWidth - 16));
+    const panelHeight = Math.min(bounds.height, Math.max(0, window.innerHeight - 16));
+    this.panelLeft.set(
+      clamp(rect.right - panelWidth, 8, Math.max(8, window.innerWidth - panelWidth - 8))
     );
+    const below = rect.bottom + 6;
+    const top = below + panelHeight <= window.innerHeight - 8 ? below : rect.top - panelHeight - 6;
+    this.panelTop.set(clamp(top, 8, Math.max(8, window.innerHeight - panelHeight - 8)));
   }
 
   onDocumentClick(event: MouseEvent): void {
