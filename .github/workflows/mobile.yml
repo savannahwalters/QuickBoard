@@ -51,6 +51,25 @@ jobs:
       - name: Sync Capacitor
         run: npx cap sync android
 
+      - name: Add Maven Central mirror fallback
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          build_gradle = Path('android/build.gradle')
+          contents = build_gradle.read_text()
+          repository = '        mavenCentral()'
+          mirror = (
+              repository
+              + "\n        maven { url 'https://maven-central.storage-download.googleapis.com/maven2/' }"
+          )
+
+          if contents.count(repository) != 2:
+              raise SystemExit('Expected buildscript and project Maven Central repositories.')
+
+          build_gradle.write_text(contents.replace(repository, mirror))
+          PY
+
       - name: Register .sbd file association in AndroidManifest
         run: |
           python3 - <<'EOF'
