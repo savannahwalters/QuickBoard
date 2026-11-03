@@ -4,8 +4,8 @@ QuickBoard is a simple and intuitive app for storyboarding.
 
 ## Getting Started: Installer
 
-Install the most recent version from the releases page.
-QuickBoard currently releases on macOS (Apple silicon & Intel), Windows, Linux, Android, and iPadOS.
+Install the [most recent version from the releases page](https://github.com/savannahwalters/QuickBoard/releases/latest/). 
+QuickBoard currently releases on macOS (Apple silicon & Intel), Windows, Linux, Android, and iPadOS, **but runs best on macOS** (where it is primarily developed).
 
 <sup><sub>Please note that iPadOS releases are currently not officially supported or published to Testflight or the App Store.</sup></sub>
 <sup><sub>Please note that Intel support for macOS will be dropped with the release of macOS 28 in 2027.</sup></sub>
