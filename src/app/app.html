@@ -54,9 +54,6 @@
   (cancelExport)="exportIpc.onCancelExport()"
 />
 } @else if (dialogMode() === 'about') {
-<button type="button" class="dialog-close" aria-label="Close dialog" (click)="closeDialog()">
-  Close
-</button>
 <app-about-window />
 } @else if (dialogMode() === 'settings') {
 <app-settings />
