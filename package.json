@@ -1,15 +1,15 @@
 {
   "name": "quickboard",
   "version": "0.7.0",
-  "description": "A storyboarding tool",
+  "description": "The quick & easy storyboarding app.",
   "author": {
     "name": "QuickBoard Team",
     "email": "sav@savannah.lol"
   },
-  "homepage": "https://github.com/jmfcomo/QuickBoard",
+  "homepage": "https://github.com/savannahwalters/QuickBoard",
   "repository": {
     "type": "git",
-    "url": "https://github.com/jmfcomo/QuickBoard.git"
+    "url": "https://github.com/savannahwalters/QuickBoard.git"
   },
   "license": "MIT",
   "scripts": {
