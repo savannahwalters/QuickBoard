@@ -142,7 +142,10 @@ export class ColorPickerComponent {
     });
 
     effect((onCleanup) => {
-      if (!this.isOpen()) return;
+      if (!this.isOpen()) {
+        this.hexDraft.set(null);
+        return;
+      }
       const document = this.host.nativeElement.ownerDocument;
       const onScroll = (event: Event) => {
         const target = event.target as Node | null;

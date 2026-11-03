@@ -263,6 +263,40 @@ describe('color picker layouts', () => {
     expect(input.value).toBe(component.hexValue());
   });
 
+  it.each(['scroll', 'toggle', 'outside click', 'Escape'])(
+    'clears the hex draft on %s close without a blur event',
+    (closePath) => {
+      component.selectMode('sliders');
+      fixture.detectChanges();
+      const input = fixture.nativeElement.querySelector('.hex-input') as HTMLInputElement;
+      const blur = vi.fn();
+      input.addEventListener('blur', blur);
+      input.dispatchEvent(new Event('focus'));
+      input.value = 'invalid draft';
+      input.dispatchEvent(new Event('input'));
+      expect(component.hexDraft()).toBe('invalid draft');
+
+      if (closePath === 'scroll') {
+        fixture.nativeElement.parentElement.dispatchEvent(new Event('scroll'));
+      } else if (closePath === 'toggle') {
+        component.toggleOpen();
+      } else if (closePath === 'outside click') {
+        document.body.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      } else {
+        component.onDocumentKeydown(new KeyboardEvent('keydown', { key: 'Escape' }));
+      }
+      fixture.detectChanges();
+      expect(component.isOpen()).toBe(false);
+      expect(component.hexDraft()).toBeNull();
+      expect(blur).not.toHaveBeenCalled();
+
+      component.toggleOpen();
+      fixture.detectChanges();
+      const reopened = fixture.nativeElement.querySelector('.hex-input') as HTMLInputElement;
+      expect(reopened.value).toBe(component.hexValue());
+    },
+  );
+
   it('clamps the popup to the viewport even when the toolbar is off-screen', () => {
     vi.spyOn(fixture.nativeElement, 'getBoundingClientRect').mockReturnValue({
       right: 1400,
