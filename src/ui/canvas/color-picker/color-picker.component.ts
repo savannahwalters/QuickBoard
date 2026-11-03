@@ -67,14 +67,13 @@ export class ColorPickerComponent {
   readonly saturation = signal(1);
   readonly value = signal(1);
   readonly alpha = signal(1);
-  readonly hexText = signal('');
-  readonly alphaText = signal('');
+  readonly hexDraft = signal<string | null>(null);
   private ignoreNextColorSync = false;
 
   readonly hueId = `color-picker-hue-${++colorPickerId}`;
   readonly alphaId = `color-picker-alpha-${colorPickerId}`;
-  readonly panelId = `color-picker-panel-${colorPickerId}`;
   readonly hexId = `color-picker-hex-${colorPickerId}`;
+  readonly panelId = `color-picker-panel-${colorPickerId}`;
   readonly saturationId = `color-picker-saturation-${colorPickerId}`;
   readonly valueId = `color-picker-value-${colorPickerId}`;
   readonly modePanelId = `color-picker-mode-${colorPickerId}`;
@@ -84,8 +83,6 @@ export class ColorPickerComponent {
   private readonly isDragging = signal(false);
   private readonly activePointerId = signal<number | null>(null);
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
-  private readonly isEditingHex = signal(false);
-  private readonly isEditingAlpha = signal(false);
 
   readonly channelGradientDirection = computed(() =>
     this.mode() === 'sliders' ? 'to top' : 'to right'
@@ -155,17 +152,6 @@ export class ColorPickerComponent {
       this.value.set(hsv.v);
       this.alpha.set(parsed.a);
     });
-
-    effect(() => {
-      const hexValue = this.hexValue();
-      const alphaValue = this.alphaPercentValue();
-      const editingHex = this.isEditingHex();
-      const editingAlpha = this.isEditingAlpha();
-      untracked(() => {
-        if (!editingHex) this.hexText.set(hexValue);
-        if (!editingAlpha) this.alphaText.set(String(alphaValue));
-      });
-    });
   }
 
   toggleOpen(): void {
@@ -207,7 +193,23 @@ export class ColorPickerComponent {
   selectMode(mode: PickerMode): void {
     this.isDragging.set(false);
     this.activePointerId.set(null);
+    this.hexDraft.set(null);
     this.mode.set(mode);
+  }
+
+  onHexInput(event: Event): void {
+    const text = (event.target as HTMLInputElement).value;
+    this.hexDraft.set(text);
+    const digits = text.trim().replace(/^#/, '');
+    if (!/^(?:[0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i.test(digits)) return;
+    const parsed = parseColor(`#${digits}`);
+    if (!parsed) return;
+    const hsv = rgbToHsv(parsed);
+    if (hsv.s !== 0) this.hue.set(hsv.h);
+    if (hsv.v !== 0) this.saturation.set(hsv.s);
+    this.value.set(hsv.v);
+    if (digits.length === 8) this.alpha.set(parsed.a);
+    this.emitColor();
   }
 
   onTabKeydown(event: KeyboardEvent, index: number): void {
@@ -305,63 +307,6 @@ export class ColorPickerComponent {
     this.emitColor();
   }
 
-  onHexFocus(): void {
-    this.isEditingHex.set(true);
-  }
-
-  onHexBlur(): void {
-    this.isEditingHex.set(false);
-    const normalized = normalizeHexInput(this.hexText());
-    if (!normalized) {
-      this.hexText.set(this.hexValue());
-      return;
-    }
-    const parsed = parseColor(normalized);
-    if (parsed) {
-      this.applyParsedColor(parsed);
-    }
-  }
-
-  onHexInput(event: Event): void {
-    const target = event.target as HTMLInputElement | null;
-    if (!target) return;
-    const value = target.value;
-    this.hexText.set(value);
-    const normalized = normalizeHexInput(value);
-    if (!normalized) return;
-    const parsed = parseColor(normalized);
-    if (!parsed) return;
-    this.applyParsedColor(parsed);
-  }
-
-  onAlphaFocus(): void {
-    this.isEditingAlpha.set(true);
-  }
-
-  onAlphaBlur(): void {
-    this.isEditingAlpha.set(false);
-    const parsed = parseInt(this.alphaText(), 10);
-    if (Number.isNaN(parsed)) {
-      this.alphaText.set(String(this.alphaPercentValue()));
-      return;
-    }
-    const clamped = clamp(parsed, 0, 100);
-    this.alpha.set(clamped / 100);
-    this.emitColor();
-  }
-
-  onAlphaTextInput(event: Event): void {
-    const target = event.target as HTMLInputElement | null;
-    if (!target) return;
-    const value = target.value;
-    this.alphaText.set(value);
-    const parsed = parseInt(value, 10);
-    if (Number.isNaN(parsed)) return;
-    const clamped = clamp(parsed, 0, 100);
-    this.alpha.set(clamped / 100);
-    this.emitColor();
-  }
-
   private updateSvFromEvent(event: PointerEvent): void {
     const areaRef = this.svArea();
     if (!areaRef) return;
@@ -379,19 +324,6 @@ export class ColorPickerComponent {
     const colorValue = formatRgba(rgb, this.alpha());
     this.ignoreNextColorSync = true;
     this.colorChange.emit(colorValue);
-  }
-
-  private applyParsedColor(parsed: Rgba): void {
-    const hsv = rgbToHsv(parsed);
-    const isGray = hsv.s === 0;
-    const isBlack = hsv.v === 0;
-    const nextHue = isGray ? this.hue() : hsv.h;
-    const nextSaturation = isBlack ? this.saturation() : hsv.s;
-    this.hue.set(nextHue);
-    this.saturation.set(nextSaturation);
-    this.value.set(hsv.v);
-    this.alpha.set(parsed.a);
-    this.emitColor();
   }
 }
 
@@ -439,14 +371,6 @@ function parseColor(value: string): Rgba | null {
   }
 
   return null;
-}
-
-function normalizeHexInput(value: string): string | null {
-  const cleaned = value.trim().replace(/^#/, '');
-  if (!/^[0-9a-fA-F]{3}$|^[0-9a-fA-F]{6}$|^[0-9a-fA-F]{8}$/.test(cleaned)) {
-    return null;
-  }
-  return `#${cleaned}`;
 }
 
 function parseRgbChannel(value: string): number {

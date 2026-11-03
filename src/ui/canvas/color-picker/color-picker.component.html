@@ -42,7 +42,7 @@
       }
     </div>
     <div role="tabpanel" [id]="modePanelId" [attr.aria-labelledby]="modePanelId + '-' + mode()">
-      <div class="selector-body">
+      <div class="selector-body" [class.sliders-mode]="mode() === 'sliders'">
         @if (mode() === 'square') {
         <div
           #svArea
@@ -141,6 +141,26 @@
           </div>
           }
         </div>
+        @if (mode() === 'sliders') {
+        <div class="hex-row">
+          <label class="slider-label" [attr.for]="hexId">Hex</label>
+          <input
+            [id]="hexId"
+            type="text"
+            class="hex-input"
+            [value]="hexDraft() ?? hexValue()"
+            (focus)="hexDraft.set(hexValue())"
+            (input)="onHexInput($event)"
+            (blur)="hexDraft.set(null)"
+            (keydown.enter)="hexDraft.set(null)"
+            spellcheck="false"
+            autocomplete="off"
+            autocapitalize="characters"
+            maxlength="9"
+            [attr.aria-label]="label() + ' hex color'"
+          />
+        </div>
+        }
       </div>
     </div>
 
@@ -158,47 +178,7 @@
         [style.--slider-background]="alphaGradient()"
         [attr.aria-label]="label() + ' transparency'"
       />
-    </div>
-
-    <div class="preview-row">
-      <div class="preview-group">
-        <div
-          class="preview-swatch"
-          [class.transparent-checker]="isTransparent()"
-          [style.background-color]="displayColor()"
-        ></div>
-        <div class="alpha-input-group">
-          <input
-            type="number"
-            min="0"
-            max="100"
-            step="1"
-            class="alpha-input"
-            [value]="alphaText()"
-            (input)="onAlphaTextInput($event)"
-            (focus)="onAlphaFocus()"
-            (blur)="onAlphaBlur()"
-            [attr.aria-label]="label() + ' alpha percent'"
-          />
-          <span class="alpha-suffix">%</span>
-        </div>
-      </div>
-      <div class="hex-group">
-        <label class="hex-label" [attr.for]="hexId">Hex</label>
-        <input
-          [id]="hexId"
-          type="text"
-          class="hex-input"
-          [value]="hexText()"
-          (input)="onHexInput($event)"
-          (focus)="onHexFocus()"
-          (blur)="onHexBlur()"
-          spellcheck="false"
-          autocomplete="off"
-          autocapitalize="characters"
-          [attr.aria-label]="label() + ' hex color'"
-        />
-      </div>
+      <output class="channel-value" [attr.for]="alphaId">{{ alphaPercentValue() }}%</output>
     </div>
   </div>
   }

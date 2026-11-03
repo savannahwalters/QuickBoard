@@ -88,15 +88,16 @@ describe('color picker layouts', () => {
     expect(fixture.nativeElement.querySelectorAll('[role="tab"][tabindex="0"]')).toHaveLength(1);
   });
 
-  it('renders triangle and ring pixels and leaves the gap transparent', () => {
+  it('renders a larger triangle without a hue ring', () => {
     const image = putImageData.mock.calls.at(-1)![0] as ImageData;
     const pixel = (x: number, y: number) =>
       Array.from(image.data.slice((y * 384 + x) * 4, (y * 384 + x) * 4 + 4));
-    expect(pixel(355, 192)).toEqual([255, 1, 0, 255]);
+    expect(pixel(355, 192)[3]).toBe(0);
     expect(pixel(192, 192)[3]).toBe(255);
     expect(pixel(192, 48)[3]).toBe(255);
-    expect(pixel(192, 54)[3]).toBe(0);
+    expect(pixel(48, 330)[3]).toBe(255);
     expect(pixel(0, 0)[3]).toBe(0);
+    expect(fixture.nativeElement.querySelector('.hue-handle')).toBeNull();
   });
 
   it('renders the disc at the selected value and provides a value bar', () => {
@@ -154,7 +155,7 @@ describe('color picker layouts', () => {
     );
   });
 
-  it('locks a ring drag to hue even when the pointer enters the triangle', () => {
+  it('drags the enlarged triangle without changing hue and ignores unrelated pointers', () => {
     const selector = fixture.debugElement.query(By.directive(CircularColorSelectorComponent))
       .componentInstance as CircularColorSelectorComponent;
     const canvas = fixture.nativeElement.querySelector('canvas') as HTMLCanvasElement;
@@ -174,17 +175,19 @@ describe('color picker layouts', () => {
         currentTarget: canvas,
         preventDefault: vi.fn(),
       } as unknown as PointerEvent);
-    selector.startDrag(pointer(185, 100));
+    selector.startDrag(pointer(100, 50));
+    const original = component.displayColor();
     selector.moveDrag(pointer(100, 120, 2));
+    expect(component.displayColor()).toBe(original);
     expect(component.hue()).toBe(0);
     selector.moveDrag(pointer(100, 120));
-    expect(component.hue()).toBe(90);
-    expect(component.saturation()).toBe(1);
-    expect(component.value()).toBe(1);
+    expect(component.hue()).toBe(0);
+    expect(component.value()).toBeLessThan(1);
     expect(component.alpha()).toBe(0.4);
     selector.endDrag(pointer(100, 120));
+    const finalColor = component.displayColor();
     selector.moveDrag(pointer(15, 100));
-    expect(component.hue()).toBe(90);
+    expect(component.displayColor()).toBe(finalColor);
   });
 
   it('adjusts the circular selector with the keyboard without losing alpha', () => {
@@ -200,12 +203,62 @@ describe('color picker layouts', () => {
     expect(component.alpha()).toBe(0.4);
   });
 
-  it('preserves exact hex channels instead of rounding hue to whole degrees', () => {
+  it('shows alpha percent beside its slider without the old information footer', () => {
+    const input = fixture.nativeElement.querySelector('.alpha-slider') as HTMLInputElement;
+    const output = fixture.nativeElement.querySelector(`output[for="${component.alphaId}"]`);
+    expect(output.textContent.trim()).toBe('40%');
+    input.value = '65';
+    input.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+    expect(output.textContent.trim()).toBe('65%');
+    expect(component.alpha()).toBe(0.65);
+    expect(fixture.nativeElement.querySelector('.preview-row')).toBeNull();
+    expect(fixture.nativeElement.querySelector('.hex-input')).toBeNull();
+    expect(fixture.nativeElement.querySelector('input[type="number"]')).toBeNull();
+  });
+
+  it('preserves exact incoming color channels', () => {
+    fixture.componentRef.setInput('color', '#e64c80');
+    fixture.detectChanges();
+    expect(component.hexValue()).toBe('#E64C80');
+  });
+
+  it('shows an editable hex field only beneath the Sliders controls', () => {
+    for (const option of component.modes) {
+      component.selectMode(option.id);
+      fixture.detectChanges();
+      expect(!!fixture.nativeElement.querySelector('.hex-input')).toBe(option.id === 'sliders');
+    }
     const input = fixture.nativeElement.querySelector('.hex-input') as HTMLInputElement;
+    input.dispatchEvent(new Event('focus'));
     input.value = '#e64c80';
     input.dispatchEvent(new Event('input'));
     fixture.detectChanges();
     expect(component.hexValue()).toBe('#E64C80');
+    expect(component.alpha()).toBe(0.4);
+    input.value = 'invalid';
+    input.dispatchEvent(new Event('input'));
+    input.dispatchEvent(new Event('blur'));
+    fixture.detectChanges();
+    expect(input.value).toBe('#E64C80');
+  });
+
+  it('supports short hex and explicit alpha while keeping the hex field in sync', () => {
+    component.selectMode('sliders');
+    fixture.detectChanges();
+    const input = fixture.nativeElement.querySelector('.hex-input') as HTMLInputElement;
+    input.value = '#0f0';
+    input.dispatchEvent(new Event('input'));
+    expect(component.hexValue()).toBe('#00FF00');
+    expect(component.alpha()).toBe(0.4);
+    input.value = '#33669980';
+    input.dispatchEvent(new Event('input'));
+    expect(component.hexValue()).toBe('#336699');
+    expect(component.alphaPercentValue()).toBe(50);
+    input.dispatchEvent(new Event('blur'));
+    component.onSelectionChange({ v: 1 });
+    fixture.detectChanges();
+    expect(input.value).toBe(component.hexValue());
   });
 
   it('clamps the popup to the viewport even when the toolbar is off-screen', () => {

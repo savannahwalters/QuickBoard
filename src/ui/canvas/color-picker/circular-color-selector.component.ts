@@ -52,13 +52,6 @@ export interface SelectorChange {
         [style.left.%]="handle().x * 100"
         [style.top.%]="handle().y * 100"
       ></span>
-      @if (mode() === 'triangle') {
-      <span
-        class="handle hue-handle"
-        [style.left.%]="hueHandle().x * 100"
-        [style.top.%]="hueHandle().y * 100"
-      ></span>
-      }
     </div>
   `,
   styles: `
@@ -67,7 +60,6 @@ export interface SelectorChange {
     canvas { display: block; width: 100%; height: 100%; touch-action: none; cursor: crosshair; border-radius: 4px; }
     canvas:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
     .handle { position: absolute; width: 10px; height: 10px; border: 2px solid white; border-radius: 50%; box-shadow: 0 0 0 1px black; transform: translate(-50%, -50%); pointer-events: none; }
-    .hue-handle { width: 8px; height: 8px; }
   `,
 })
 export class CircularColorSelectorComponent {
@@ -83,7 +75,6 @@ export class CircularColorSelectorComponent {
       ? trianglePoint(this.saturation(), this.value())
       : wheelPoint(this.hue(), this.saturation())
   );
-  readonly hueHandle = computed(() => wheelPoint(this.hue(), 1, 0.425));
   readonly valueText = computed(
     () =>
       `Hue ${Math.round(this.hue())} degrees, Saturation ${Math.round(
@@ -91,7 +82,7 @@ export class CircularColorSelectorComponent {
       )} percent, Value ${Math.round(this.value() * 100)} percent`
   );
   private pointerId: number | null = null;
-  private dragRegion: 'hue' | 'triangle' | 'wheel' = 'triangle';
+  private dragRegion: 'triangle' | 'wheel' = 'triangle';
 
   constructor() {
     effect(() => {
@@ -112,8 +103,6 @@ export class CircularColorSelectorComponent {
             if (radius > 0.48) continue;
             const color = wheelColor(point);
             rgb = hsvToRgb(color.h, color.s, value);
-          } else if (radius >= 0.37 && radius <= 0.48) {
-            rgb = hsvToRgb(wheelColor(point).h, 1, 1);
           } else {
             const color = triangleColor(point, false);
             if (!color) continue;
@@ -135,9 +124,8 @@ export class CircularColorSelectorComponent {
     const canvas = event.currentTarget as HTMLCanvasElement;
     const point = this.eventPoint(event, canvas);
     const radius = Math.hypot(point.x - 0.5, point.y - 0.5);
-    if (radius > 0.5) return;
-    if (this.mode() === 'wheel') this.dragRegion = 'wheel';
-    else if (radius >= 0.37) this.dragRegion = 'hue';
+    if (this.mode() === 'wheel' && radius <= 0.48) this.dragRegion = 'wheel';
+    else if (this.mode() === 'wheel') return;
     else if (triangleColor(point, false)) this.dragRegion = 'triangle';
     else return;
     event.preventDefault();
@@ -194,11 +182,7 @@ export class CircularColorSelectorComponent {
       this.selectionChange.emit({ s: color.v === 0 ? this.saturation() : color.s, v: color.v });
     } else {
       const color = wheelColor(point);
-      this.selectionChange.emit(
-        this.dragRegion === 'hue'
-          ? { h: color.h }
-          : { h: color.s === 0 ? this.hue() : color.h, s: color.s }
-      );
+      this.selectionChange.emit({ h: color.s === 0 ? this.hue() : color.h, s: color.s });
     }
   }
 }

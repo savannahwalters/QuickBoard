@@ -18,9 +18,9 @@ export function hsvToRgb(
 }
 
 export const TRIANGLE = {
-  hue: { x: 0.5, y: 0.15 },
-  white: { x: 0.196891, y: 0.675 },
-  black: { x: 0.803109, y: 0.675 },
+  hue: { x: 0.5, y: 0.084308 },
+  white: { x: 0.02, y: 0.915692 },
+  black: { x: 0.98, y: 0.915692 },
 };
 
 export function trianglePoint(saturation: number, value: number): PickerPoint {
