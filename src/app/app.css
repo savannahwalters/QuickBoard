@@ -17,6 +17,20 @@
   overflow: visible;
 }
 
+.dialog-close {
+  position: fixed;
+  top: calc(10px + env(safe-area-inset-top));
+  right: calc(10px + env(safe-area-inset-right));
+  z-index: 10000;
+  border: 1px solid var(--border-default);
+  background: var(--surface-raised, #ffffff);
+  color: var(--text-default);
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
 .app {
   display: flex;
   flex-direction: column;
