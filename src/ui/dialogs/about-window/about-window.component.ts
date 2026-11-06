@@ -10,7 +10,7 @@ import { ChangeDetectionStrategy, Component, OnInit, signal } from '@angular/cor
 export class AboutWindowComponent implements OnInit {
   protected readonly description = signal('');
   protected readonly version = signal('unknown');
-  readonly githubUrl = 'https://github.com/jmfcomo/QuickBoard';
+  readonly githubUrl = 'https://github.com/savannahwalters/QuickBoard';
 
   ngOnInit() {
     const params = new URLSearchParams(window.location.search);

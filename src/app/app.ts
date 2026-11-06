@@ -50,6 +50,7 @@ export class App implements OnInit, OnDestroy {
   protected readonly exportIpc = inject(ExportIpcService);
   protected readonly isElectron = !!window.quickboard;
   protected readonly isIos = Capacitor.getPlatform() === 'ios';
+  protected readonly isMobile = Capacitor.isNativePlatform();
   protected readonly showWebToolbar = !this.isElectron && !this.isIos;
   protected readonly useSafeArea = !this.isElectron;
   private readonly undoRedo = inject(UndoRedoService);
@@ -69,7 +70,12 @@ export class App implements OnInit, OnDestroy {
         flushCurrentBoardState: (force) => this.canvas()?.flushCurrentBoardState(force),
         prepareForProjectLoad: () => this.canvas()?.prepareForProjectLoad(),
       },
-      (dialog) => this.dialogMode.set(dialog),
+      (dialog) => {
+        if (dialog === 'about') {
+          this.canvas()?.flushCurrentBoardState();
+        }
+        this.dialogMode.set(dialog);
+      },
       () => this.title()
     );
 
@@ -132,6 +138,11 @@ export class App implements OnInit, OnDestroy {
     window.requestAnimationFrame(() => {
       window.dispatchEvent(new Event('resize'));
     });
+  }
+
+  protected openMobileAbout(): void {
+    this.canvas()?.flushCurrentBoardState();
+    this.dialogMode.set('about');
   }
 
   private isEditableTarget(event: KeyboardEvent): boolean {

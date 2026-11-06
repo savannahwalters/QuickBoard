@@ -1,4 +1,11 @@
-import { ChangeDetectionStrategy, Component, HostListener, inject, signal } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  HostListener,
+  inject,
+  output,
+  signal,
+} from '@angular/core';
 import { SbdService } from '../../app/app.sbd.service';
 import { UndoRedoService } from '../../services/undo-redo.service';
 import { ExportIpcService } from '../../services/export-ipc.service';
@@ -22,6 +29,7 @@ export class WebToolbarComponent {
   private readonly platformFile = inject(PlatformFileService);
 
   readonly activeMenu = signal<string | null>(null);
+  readonly openMobileAbout = output<void>();
   readonly isElectron = !!window.quickboard;
   readonly currentTheme = this.themeService.currentTheme;
 
@@ -74,7 +82,11 @@ export class WebToolbarComponent {
   }
 
   triggerMobileAbout(): void {
-    window.open('?dialog=about', '_blank', 'width=320,height=260,noopener,noreferrer');
+    if (this.platformFile.isNative) {
+      this.openMobileAbout.emit();
+    } else {
+      window.open('?dialog=about', '_blank', 'width=320,height=260,noopener,noreferrer');
+    }
   }
 
   async triggerMobileSave(): Promise<void> {

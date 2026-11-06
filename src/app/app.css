@@ -24,7 +24,7 @@
   z-index: 10000;
   border: 1px solid var(--border-default);
   background: var(--surface-raised, #ffffff);
-  color: var(--text-primary, #111111);
+  color: var(--text-default);
   border-radius: 8px;
   padding: 6px 10px;
   font-size: 13px;

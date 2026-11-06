@@ -50,6 +50,16 @@
   color: var(--text-light);
 }
 
+.creators-label {
+  margin-top: 12px;
+}
+
+.creator-names {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-light);
+}
+
 .link-btn {
   background: none;
   border: none;
