@@ -115,12 +115,15 @@ describe('About dialog', () => {
       fixture.detectChanges();
       expect(canvas.flushCurrentBoardState).toHaveBeenCalledOnce();
       expect(fixture.nativeElement.querySelector('app-about-window')).not.toBeNull();
+      expect(fixture.nativeElement.querySelector('.app.dialog-hidden')).not.toBeNull();
       const close = fixture.nativeElement.querySelector('button.dialog-close') as HTMLButtonElement;
       expect(close).not.toBeNull();
       close.click();
       fixture.detectChanges();
       expect(fixture.nativeElement.querySelector('app-about-window')).toBeNull();
       expect(fixture.nativeElement.querySelector('app-canvas')).not.toBeNull();
+      expect(fixture.nativeElement.querySelector('.app.dialog-hidden')).toBeNull();
+      expect(fixture.debugElement.query(By.directive(CanvasStub)).componentInstance).toBe(canvas);
     }
   );
 

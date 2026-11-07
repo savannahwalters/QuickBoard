@@ -1,5 +1,9 @@
-@if (!dialogMode()) {
-<div class="app" [class.canvas-fullscreen]="isCanvasFullscreen()">
+@if (!dialogMode() || (dialogMode() === 'about' && isMobile && !isElectron)) {
+<div
+  class="app"
+  [class.canvas-fullscreen]="isCanvasFullscreen()"
+  [class.dialog-hidden]="dialogMode() === 'about'"
+>
   <!-- Non-Electron Toolbar -->
   @if (showWebToolbar) {
   <app-web-toolbar (openMobileAbout)="openMobileAbout()" />
@@ -53,6 +57,14 @@
   (dismiss)="exportIpc.onDismiss()"
   (cancelExport)="exportIpc.onCancelExport()"
 />
+@if (dialogMode() === 'about') {
+@if (isMobile) {
+<button type="button" class="dialog-close" aria-label="Close dialog" (click)="closeDialog()">
+  Close
+</button>
+}
+<app-about-window />
+}
 } @else if (dialogMode() === 'about') {
 @if (isMobile) {
 <button type="button" class="dialog-close" aria-label="Close dialog" (click)="closeDialog()">
