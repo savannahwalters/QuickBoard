@@ -23,8 +23,8 @@
   right: calc(10px + env(safe-area-inset-right));
   z-index: 10000;
   border: 1px solid var(--border-default);
-  background: var(--surface-raised, #ffffff);
-  color: var(--text-primary, #111111);
+  background: var(--bg-panel);
+  color: var(--text-default);
   border-radius: 8px;
   padding: 6px 10px;
   font-size: 13px;
@@ -40,6 +40,10 @@
   position: relative;
   font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
     Helvetica, Arial, 'Apple Color Emoji', 'Segoe UI Emoji';
+}
+
+.app.dialog-hidden {
+  display: none;
 }
 
 .save-toast {

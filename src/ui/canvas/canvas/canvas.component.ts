@@ -53,6 +53,7 @@ import { appSettings } from 'src/settings-loader';
 })
 export class CanvasComponent implements AfterViewInit, OnDestroy {
   readonly isCanvasFullscreen = input(false);
+  readonly shortcutsEnabled = input(true);
   readonly canvasFullscreenToggled = output<void>();
 
   readonly onionSkinLayers = inject(OnionSkinService).onionSkinLayers;
@@ -276,6 +277,9 @@ export class CanvasComponent implements AfterViewInit, OnDestroy {
 
   @HostListener('window:keydown', ['$event'])
   onKeyDown(event: KeyboardEvent) {
+    if (!this.shortcutsEnabled()) {
+      return;
+    }
     this.shortcutsController.handleKeyDown(event);
   }
 

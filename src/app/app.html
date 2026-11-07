@@ -1,8 +1,12 @@
-@if (!dialogMode()) {
-<div class="app" [class.canvas-fullscreen]="isCanvasFullscreen()">
+@if (!dialogMode() || (dialogMode() === 'about' && isMobile && !isElectron)) {
+<div
+  class="app"
+  [class.canvas-fullscreen]="isCanvasFullscreen()"
+  [class.dialog-hidden]="dialogMode() === 'about'"
+>
   <!-- Non-Electron Toolbar -->
   @if (showWebToolbar) {
-  <app-web-toolbar />
+  <app-web-toolbar (openMobileAbout)="openMobileAbout()" />
   }
 
   <div class="save-toast" [class.visible]="saveService.saveStatus()">
@@ -11,6 +15,7 @@
   <div class="editors">
     <app-canvas
       [isCanvasFullscreen]="isCanvasFullscreen()"
+      [shortcutsEnabled]="dialogMode() !== 'about'"
       (canvasFullscreenToggled)="toggleCanvasFullscreen()"
     ></app-canvas>
     @if (!isCanvasFullscreen()) {
@@ -53,10 +58,20 @@
   (dismiss)="exportIpc.onDismiss()"
   (cancelExport)="exportIpc.onCancelExport()"
 />
-} @else if (dialogMode() === 'about') {
+@if (dialogMode() === 'about') {
+@if (isMobile) {
 <button type="button" class="dialog-close" aria-label="Close dialog" (click)="closeDialog()">
   Close
 </button>
+}
+<app-about-window />
+}
+} @else if (dialogMode() === 'about') {
+@if (isMobile) {
+<button type="button" class="dialog-close" aria-label="Close dialog" (click)="closeDialog()">
+  Close
+</button>
+}
 <app-about-window />
 } @else if (dialogMode() === 'settings') {
 <app-settings />
