@@ -15,6 +15,7 @@
   <div class="editors">
     <app-canvas
       [isCanvasFullscreen]="isCanvasFullscreen()"
+      [shortcutsEnabled]="dialogMode() !== 'about'"
       (canvasFullscreenToggled)="toggleCanvasFullscreen()"
     ></app-canvas>
     @if (!isCanvasFullscreen()) {

@@ -20,6 +20,7 @@ import { CanvasComponent } from '../ui/canvas/canvas/canvas.component';
 })
 class CanvasStub {
   readonly isCanvasFullscreen = input(false);
+  readonly shortcutsEnabled = input(true);
   readonly canvasFullscreenToggled = output<void>();
   readonly flushCurrentBoardState = vi.fn();
 }
@@ -116,6 +117,7 @@ describe('About dialog', () => {
       expect(canvas.flushCurrentBoardState).toHaveBeenCalledOnce();
       expect(fixture.nativeElement.querySelector('app-about-window')).not.toBeNull();
       expect(fixture.nativeElement.querySelector('.app.dialog-hidden')).not.toBeNull();
+      expect(canvas.shortcutsEnabled()).toBe(false);
       const close = fixture.nativeElement.querySelector('button.dialog-close') as HTMLButtonElement;
       expect(close).not.toBeNull();
       close.click();
@@ -123,6 +125,7 @@ describe('About dialog', () => {
       expect(fixture.nativeElement.querySelector('app-about-window')).toBeNull();
       expect(fixture.nativeElement.querySelector('app-canvas')).not.toBeNull();
       expect(fixture.nativeElement.querySelector('.app.dialog-hidden')).toBeNull();
+      expect(canvas.shortcutsEnabled()).toBe(true);
       expect(fixture.debugElement.query(By.directive(CanvasStub)).componentInstance).toBe(canvas);
     }
   );
