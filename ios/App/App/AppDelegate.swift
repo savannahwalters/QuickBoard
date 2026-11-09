@@ -121,16 +121,20 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         let load = UIAction(title: "Load") { [weak self] _ in
             self?.emitMenuAction("file.load")
         }
+        let importImage = UIAction(title: "Image...") { [weak self] _ in
+            self?.emitMenuAction("file.importImage")
+        }
         let export = UIAction(title: "Export...") { [weak self] _ in
             self?.emitMenuAction("file.export")
         }
+        let importMenu = UIMenu(title: "Import", children: [importImage])
 
         return UIMenu(
             title: "File",
             image: nil,
             identifier: .file,
             options: [],
-            children: [save, saveAs, load, export]
+            children: [save, saveAs, load, importMenu, export]
         )
     }
 

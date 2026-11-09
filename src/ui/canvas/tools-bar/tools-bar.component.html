@@ -1,6 +1,18 @@
 <div class="tools-region">
   <div class="tools-bar">
     <button
+      class="tool-button"
+      [class.active]="activeTool() === 'select'"
+      type="button"
+      (click)="onObjectSelectClick()"
+      (mouseenter)="showTooltip($event, 'Object Select')"
+      (mouseleave)="hideTooltip()"
+      aria-label="Object Select"
+    >
+      👆
+    </button>
+
+    <button
       class="tool-button tool-group-button"
       [class.active]="isEditToolActive()"
       type="button"
@@ -75,17 +87,17 @@
     </button>
 
     @for (tool of tools; track tool.id) {
-      <button
-        class="tool-button"
-        [class.active]="activeTool() === tool.id"
-        type="button"
-        (click)="toolSelected.emit(tool.id)"
-        (mouseenter)="showTooltip($event, tool.label)"
-        (mouseleave)="hideTooltip()"
-        [attr.aria-label]="tool.label"
-      >
-        {{ tool.icon }}
-      </button>
+    <button
+      class="tool-button"
+      [class.active]="activeTool() === tool.id"
+      type="button"
+      (click)="toolSelected.emit(tool.id)"
+      (mouseenter)="showTooltip($event, tool.label)"
+      (mouseleave)="hideTooltip()"
+      [attr.aria-label]="tool.label"
+    >
+      {{ tool.icon }}
+    </button>
     }
 
     <div class="bottom-tools">
@@ -119,12 +131,21 @@
         [class.active]="isCanvasFullscreen()"
         type="button"
         (click)="toggleCanvasFullscreen()"
-        (mouseenter)="showTooltip($event, isCanvasFullscreen() ? 'Exit Full Screen Canvas' : 'Full Screen Canvas')"
+        (mouseenter)="
+          showTooltip(
+            $event,
+            isCanvasFullscreen() ? 'Exit Full Screen Canvas' : 'Full Screen Canvas'
+          )
+        "
         (mouseleave)="hideTooltip()"
         [attr.aria-label]="isCanvasFullscreen() ? 'Exit Full Screen Canvas' : 'Full Screen Canvas'"
         [attr.aria-pressed]="isCanvasFullscreen()"
       >
-        <span class="fullscreen-toggle-icon" [class.exit-icon]="isCanvasFullscreen()" aria-hidden="true">
+        <span
+          class="fullscreen-toggle-icon"
+          [class.exit-icon]="isCanvasFullscreen()"
+          aria-hidden="true"
+        >
           <span class="triangle triangle-a"></span>
           <span class="triangle triangle-b"></span>
         </span>
@@ -133,32 +154,30 @@
   </div>
 
   @if (openToolSubmenu()) {
-    <div
-      class="tool-group-submenu"
-      [style.top.px]="toolSubmenuTop()"
-      role="menu"
-      [attr.aria-label]="activeSubmenuLabel()"
+  <div
+    class="tool-group-submenu"
+    [style.top.px]="toolSubmenuTop()"
+    role="menu"
+    [attr.aria-label]="activeSubmenuLabel()"
+  >
+    @for (submenuTool of activeSubmenuTools(); track submenuTool.id) {
+    <button
+      class="tool-button"
+      [class.active]="activeSubmenuSelectedId() === submenuTool.id"
+      type="button"
+      (click)="onActiveSubmenuSelect(submenuTool.id)"
+      (mouseenter)="showTooltip($event, submenuTool.label)"
+      (mouseleave)="hideTooltip()"
+      [attr.aria-label]="submenuTool.label"
+      role="menuitem"
     >
-      @for (submenuTool of activeSubmenuTools(); track submenuTool.id) {
-        <button
-          class="tool-button"
-          [class.active]="activeSubmenuSelectedId() === submenuTool.id"
-          type="button"
-          (click)="onActiveSubmenuSelect(submenuTool.id)"
-          (mouseenter)="showTooltip($event, submenuTool.label)"
-          (mouseleave)="hideTooltip()"
-          [attr.aria-label]="submenuTool.label"
-          role="menuitem"
-        >
-          {{ submenuTool.icon }}
-        </button>
-      }
-    </div>
-  }
-
-  @if (tooltipVisible()) {
-    <div class="custom-tooltip" [style.top.px]="tooltipTop()" [style.left.px]="tooltipLeft()">
-      {{ tooltipText() }}
-    </div>
+      {{ submenuTool.icon }}
+    </button>
+    }
+  </div>
+  } @if (tooltipVisible()) {
+  <div class="custom-tooltip" [style.top.px]="tooltipTop()" [style.left.px]="tooltipLeft()">
+    {{ tooltipText() }}
+  </div>
   }
 </div>

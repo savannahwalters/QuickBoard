@@ -49,14 +49,18 @@ export class ToolsBarComponent implements OnDestroy {
     { id: 'object-eraser', label: 'Object Eraser', icon: '🧹' },
   ];
   readonly editTools: readonly ToolOption[] = [
-    { id: 'select', label: 'Select', icon: '👆' },
-    { id: 'image', label: 'Image', icon: '🖼️' },
+    { id: 'rectangle-select', label: 'Rectangle Select', icon: '▭' },
+    { id: 'circle-select', label: 'Circle Select', icon: '◯' },
+    { id: 'polygon-select', label: 'Polygon Select', icon: '△' },
+    { id: 'lasso-select', label: 'Lasso Select', icon: '〰️' },
   ];
 
   readonly selectedDrawTool = signal<'pencil' | 'brush'>('pencil');
   readonly selectedShape = signal<'rectangle' | 'circle' | 'polygon'>('rectangle');
   readonly selectedEraserTool = signal<'eraser' | 'object-eraser'>('eraser');
-  readonly selectedEditTool = signal<'select' | 'image'>('select');
+  readonly selectedEditTool = signal<
+    'rectangle-select' | 'circle-select' | 'polygon-select' | 'lasso-select'
+  >('rectangle-select');
   readonly openToolSubmenu = signal<ToolGroupKey | null>(null);
   readonly toolSubmenuTop = signal(0);
 
@@ -73,7 +77,7 @@ export class ToolsBarComponent implements OnDestroy {
     if (group === 'draw') return 'Draw tools';
     if (group === 'shape') return 'Shape tools';
     if (group === 'erase') return 'Eraser tools';
-    if (group === 'edit') return 'Edit tools';
+    if (group === 'edit') return 'Selection tools';
     return '';
   });
   readonly activeSubmenuSelectedId = computed(() => {
@@ -233,6 +237,12 @@ export class ToolsBarComponent implements OnDestroy {
     this.toolSelected.emit(this.getSelectedToolForGroup(group));
   }
 
+  public onObjectSelectClick(): void {
+    this.hideTooltip();
+    this.closeToolSubmenu();
+    this.toolSelected.emit('select');
+  }
+
   public onActiveSubmenuSelect(toolId: string): void {
     const group = this.openToolSubmenu();
     if (!group) {
@@ -261,20 +271,6 @@ export class ToolsBarComponent implements OnDestroy {
     }
 
     if (group === 'edit' && this.isEditTool(toolId)) {
-      if (toolId === 'image') {
-        const input = this.document.createElement('input');
-        input.type = 'file';
-        input.accept = 'image/*';
-        input.onchange = (e: Event) => {
-          const target = e.target as HTMLInputElement;
-          if (target.files && target.files.length > 0) {
-            this.imageSelected.emit(target.files[0]);
-          }
-        };
-        input.click();
-        this.closeToolSubmenu();
-        return;
-      }
       this.selectedEditTool.set(toolId);
       this.closeToolSubmenu();
       this.toolSelected.emit(toolId);
@@ -284,6 +280,28 @@ export class ToolsBarComponent implements OnDestroy {
   public requestClearCanvas(): void {
     this.hideTooltip();
     this.clearCanvasRequested.emit();
+  }
+
+  public requestImageImport(): void {
+    const input = this.document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/*';
+    input.style.position = 'fixed';
+    input.style.left = '-10000px';
+    input.style.opacity = '0';
+    const cleanup = () => input.remove();
+    input.addEventListener(
+      'change',
+      () => {
+        const file = input.files?.[0];
+        cleanup();
+        if (file) this.imageSelected.emit(file);
+      },
+      { once: true }
+    );
+    input.addEventListener('cancel', cleanup, { once: true });
+    this.document.body.appendChild(input);
+    input.click();
   }
 
   public toggleCanvasFullscreen(): void {
@@ -354,8 +372,15 @@ export class ToolsBarComponent implements OnDestroy {
     return toolId === 'rectangle' || toolId === 'circle' || toolId === 'polygon';
   }
 
-  private isEditTool(toolId: string): toolId is 'select' | 'image' {
-    return toolId === 'select' || toolId === 'image';
+  private isEditTool(
+    toolId: string
+  ): toolId is 'rectangle-select' | 'circle-select' | 'polygon-select' | 'lasso-select' {
+    return (
+      toolId === 'rectangle-select' ||
+      toolId === 'circle-select' ||
+      toolId === 'polygon-select' ||
+      toolId === 'lasso-select'
+    );
   }
 
   private getSelectedToolForGroup(group: ToolGroupKey): string {

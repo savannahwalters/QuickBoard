@@ -12,6 +12,7 @@ type NativeMenuAction =
   | 'file.saveAs'
   | 'file.load'
   | 'file.export'
+  | 'file.importImage'
   | 'edit.undo'
   | 'edit.redo'
   | `theme.${ThemeId}`;

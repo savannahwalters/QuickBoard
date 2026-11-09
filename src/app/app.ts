@@ -59,6 +59,7 @@ export class App implements OnInit, OnDestroy {
   private readonly shortcuts = inject(AppShortcutsService);
   private removeThemeListener?: () => void;
   private removeShortcutListener?: () => void | undefined;
+  private removeImportImageListener?: () => void;
   private removeWindowScalingListener?: () => void;
   private removeExportIpcListeners?: () => void;
 
@@ -69,6 +70,7 @@ export class App implements OnInit, OnDestroy {
       {
         flushCurrentBoardState: (force) => this.canvas()?.flushCurrentBoardState(force),
         prepareForProjectLoad: () => this.canvas()?.prepareForProjectLoad(),
+        requestImageImport: () => this.canvas()?.requestImageImport(),
       },
       (dialog) => {
         if (dialog === 'about') {
@@ -97,8 +99,9 @@ export class App implements OnInit, OnDestroy {
         const target = document.activeElement as HTMLElement | null;
         if (
           target &&
-          !target.closest('#editorjs') &&
-          (target.matches('input, textarea, select') || target.isContentEditable)
+          (target.matches('input, textarea, select') ||
+            target.isContentEditable ||
+            !!target.closest('[contenteditable="true"], #editorjs'))
         ) {
           document.execCommand(option);
           return;
@@ -110,9 +113,20 @@ export class App implements OnInit, OnDestroy {
           case 'redo':
             this.undoRedo.triggerRedo();
             break;
+          case 'copy':
+            void this.canvas()?.copySelection();
+            break;
+          case 'paste':
+            void this.canvas()?.pasteSelection();
+            break;
           default:
             break;
         }
+      });
+    }
+    if (window.quickboard?.onImportImage) {
+      this.removeImportImageListener = window.quickboard.onImportImage(() => {
+        this.canvas()?.requestImageImport();
       });
     }
 
@@ -209,6 +223,7 @@ export class App implements OnInit, OnDestroy {
     this.iosIntegration.destroy();
     this.removeThemeListener?.();
     this.removeShortcutListener?.();
+    this.removeImportImageListener?.();
     this.removeWindowScalingListener?.();
     this.removeExportIpcListeners?.();
   }

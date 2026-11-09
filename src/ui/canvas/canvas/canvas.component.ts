@@ -30,6 +30,7 @@ import { Brush, ensureSquareBrushShapeRegistered } from '../../canvas/tools/brus
 import { ObjectEraser } from '../../canvas/tools/objecteraser';
 import { BucketFill } from '../tools/bucketfill';
 import { ImprovedSelectShape, registerImprovedSelectShapes } from '../tools/improved-select';
+import { getCopiedShapes, setCopiedShapes } from '../tools/improved-select/selection-clipboard';
 import { ZoomTool } from '../tools/zoom';
 import { LCInstance, LCTool } from '../literally-canvas-interfaces';
 import { CanvasViewportController } from './canvas-viewport-controller';
@@ -280,7 +281,146 @@ export class CanvasComponent implements AfterViewInit, OnDestroy {
     if (!this.shortcutsEnabled()) {
       return;
     }
+    if ((event.metaKey || event.ctrlKey) && !event.altKey) {
+      const target = event.target as HTMLElement | null;
+      if (
+        target &&
+        (target.matches('input, textarea, select') ||
+          target.isContentEditable ||
+          target.closest('[contenteditable="true"]'))
+      ) {
+        return;
+      }
+      if (event.key.toLowerCase() === 'c') {
+        event.preventDefault();
+        void this.copySelection();
+        return;
+      }
+      if (event.key.toLowerCase() === 'v') {
+        event.preventDefault();
+        void this.pasteSelection();
+        return;
+      }
+    }
     this.shortcutsController.handleKeyDown(event);
+  }
+
+  public requestImageImport(): void {
+    this.toolbar()?.requestImageImport();
+  }
+
+  public async copySelection(): Promise<void> {
+    if (!this.lc) return;
+    const tool = this.getActiveSelectionTool();
+    const selection = tool?.getSelectedShapes() ?? [];
+    if (!selection.length) return;
+
+    const serialized = selection.map((shape) => LC.shapeToJSON(shape));
+    setCopiedShapes(serialized);
+
+    const bounds = selection.reduce<{
+      left: number;
+      top: number;
+      right: number;
+      bottom: number;
+    }>(
+      (result, shape) => {
+        if (typeof shape['getBoundingRect'] !== 'function') return result;
+        const rect = (
+          shape['getBoundingRect'] as () => {
+            x: number;
+            y: number;
+            width: number;
+            height: number;
+          }
+        )();
+        return {
+          left: Math.min(result.left, rect.x),
+          top: Math.min(result.top, rect.y),
+          right: Math.max(result.right, rect.x + rect.width),
+          bottom: Math.max(result.bottom, rect.y + rect.height),
+        };
+      },
+      { left: Infinity, top: Infinity, right: -Infinity, bottom: -Infinity }
+    );
+
+    if (
+      !navigator.clipboard?.write ||
+      typeof ClipboardItem === 'undefined' ||
+      !LC.renderSnapshotToImage ||
+      !Number.isFinite(bounds.left) ||
+      !Number.isFinite(bounds.top) ||
+      !Number.isFinite(bounds.right) ||
+      !Number.isFinite(bounds.bottom)
+    ) {
+      return;
+    }
+    const snapshot = this.lc.getSnapshot();
+    snapshot['shapes'] = serialized;
+    snapshot['backgroundShapes'] = [];
+    snapshot['colors'] = { background: 'transparent' };
+    const image = LC.renderSnapshotToImage(snapshot, {
+      rect: {
+        x: bounds.left,
+        y: bounds.top,
+        width: Math.max(1, bounds.right - bounds.left),
+        height: Math.max(1, bounds.bottom - bounds.top),
+      },
+      scale: 1,
+      includeWatermark: false,
+    });
+    const blob = await new Promise<Blob | null>((resolve) => image.toBlob(resolve, 'image/png'));
+    if (!blob) {
+      console.error('Unable to render selected objects for the system clipboard.');
+      return;
+    }
+    try {
+      await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+    } catch (error) {
+      console.warn('Unable to copy the selection to the system image clipboard.', error);
+    }
+  }
+
+  public async pasteSelection(): Promise<void> {
+    if (!this.lc) return;
+    const copied = getCopiedShapes();
+    if (copied.length) {
+      const pasted = copied.map((data) => {
+        const shape = LC.JSONToShape(data) as Record<string, unknown>;
+        if (typeof shape['x'] === 'number') shape['x'] += 20;
+        if (typeof shape['y'] === 'number') shape['y'] += 20;
+        if (
+          typeof shape['x'] !== 'number' &&
+          typeof shape['y'] !== 'number' &&
+          typeof shape['setUpperLeft'] === 'function' &&
+          typeof shape['getBoundingRect'] === 'function'
+        ) {
+          const bounds = (shape['getBoundingRect'] as () => { x: number; y: number })();
+          (shape['setUpperLeft'] as (point: { x: number; y: number }) => void).call(shape, {
+            x: bounds.x + 20,
+            y: bounds.y + 20,
+          });
+        }
+        return shape;
+      });
+      for (const shape of pasted) this.lc.saveShape(shape);
+      this.setTool('select');
+      this.getActiveSelectionTool()?.selectShapes(pasted, this.lc);
+      return;
+    }
+
+    if (!navigator.clipboard?.read) return;
+    try {
+      const items = await navigator.clipboard.read();
+      for (const item of items) {
+        if (!item.types.includes('image/png')) continue;
+        const image = await item.getType('image/png');
+        this.handleImageFile(new File([image], 'clipboard.png', { type: 'image/png' }));
+        return;
+      }
+    } catch (error) {
+      console.warn('Unable to read an image from the system clipboard.', error);
+    }
   }
 
   private initializeCanvas(): void {
@@ -395,6 +535,23 @@ export class CanvasComponent implements AfterViewInit, OnDestroy {
 
     // Initialize tool instances
     this.toolInstances.set('select', new ImprovedSelectShape(this.lc));
+    const returnToObjectSelect = () => this.setTool('select');
+    this.toolInstances.set(
+      'rectangle-select',
+      new ImprovedSelectShape(this.lc, 'rectangle', returnToObjectSelect)
+    );
+    this.toolInstances.set(
+      'circle-select',
+      new ImprovedSelectShape(this.lc, 'circle', returnToObjectSelect)
+    );
+    this.toolInstances.set(
+      'polygon-select',
+      new ImprovedSelectShape(this.lc, 'polygon', returnToObjectSelect)
+    );
+    this.toolInstances.set(
+      'lasso-select',
+      new ImprovedSelectShape(this.lc, 'lasso', returnToObjectSelect)
+    );
     this.toolInstances.set('pencil', new LC.tools.Pencil(this.lc));
     this.toolInstances.set('eraser', new LC.tools.Eraser(this.lc));
     this.toolInstances.set('brush', new Brush(this.lc));
@@ -683,6 +840,11 @@ export class CanvasComponent implements AfterViewInit, OnDestroy {
       this.lc.setTool(tool);
       this.activeTool.set(toolId);
     }
+  }
+
+  private getActiveSelectionTool(): ImprovedSelectShape | undefined {
+    const tool = this.toolInstances.get(this.activeTool());
+    return tool instanceof ImprovedSelectShape ? tool : undefined;
   }
 
   public setCanvasZoomLevel(level: number): void {

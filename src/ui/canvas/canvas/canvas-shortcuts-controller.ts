@@ -36,17 +36,7 @@ export class CanvasShortcutsController {
         this.canvas.switchTools('select');
         break;
       case 'image-tool': {
-        this.canvas.switchTools('image');
-        const input = this.canvas.document.createElement('input') as HTMLInputElement;
-        input.type = 'file';
-        input.accept = 'image/*';
-        input.onchange = (e: Event) => {
-          const target = e.target as HTMLInputElement;
-          if (target.files && target.files.length > 0) {
-            this.canvas.toolbar()?.imageSelected.emit(target.files[0]);
-          }
-        };
-        input.click();
+        this.canvas.requestImageImport();
         break;
       }
       case 'pencil-tool':
@@ -72,13 +62,10 @@ export class CanvasShortcutsController {
             this.canvas.switchTools('pencil');
           }
         } else if (tb?.isEditToolActive()) {
-          const option = tb.selectedEditToolOption();
-          if (option?.id === 'select') {
-            this.canvas.switchTools('image');
-            tb.onActiveSubmenuSelect('image');
-          } else {
-            this.canvas.switchTools('select');
-          }
+          const options = tb.editTools;
+          const currentIndex = options.findIndex((option) => option.id === this.canvas.activeTool());
+          const next = options[(currentIndex + 1 + options.length) % options.length];
+          if (next) this.canvas.switchTools(next.id);
         } else if (tb?.isShapeToolActive()) {
           const option = tb.selectedShapeTool();
           switch (option?.id) {
@@ -112,13 +99,10 @@ export class CanvasShortcutsController {
             this.canvas.switchTools('pencil');
           }
         } else if (tb?.isEditToolActive()) {
-          const option = tb.selectedEditToolOption();
-          if (option?.id === 'select') {
-            this.canvas.switchTools('image');
-            tb.onActiveSubmenuSelect('image');
-          } else {
-            this.canvas.switchTools('select');
-          }
+          const options = tb.editTools;
+          const currentIndex = options.findIndex((option) => option.id === this.canvas.activeTool());
+          const previous = options[(currentIndex - 1 + options.length) % options.length];
+          if (previous) this.canvas.switchTools(previous.id);
         } else if (tb?.isShapeToolActive()) {
           const option = tb.selectedShapeTool();
           switch (option?.id) {
@@ -171,17 +155,6 @@ export class CanvasShortcutsController {
               zoomCenter
             );
           }
-        } else if (this.canvas.activeTool() === 'image') {
-          const input = this.canvas.document.createElement('input') as HTMLInputElement;
-          input.type = 'file';
-          input.accept = 'image/*';
-          input.onchange = (e: Event) => {
-            const target = e.target as HTMLInputElement;
-            if (target.files && target.files.length > 0) {
-              this.canvas.toolbar()?.imageSelected.emit(target.files[0]);
-            }
-          };
-          input.click();
         }
         break;
       }

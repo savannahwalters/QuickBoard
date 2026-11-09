@@ -21,6 +21,7 @@ declare global {
       getThemeSource: () => Promise<ThemeId>;
       setCustomTheme: (theme: CustomThemeId | null) => void;
       onShortcut: (handler: (option: string) => void) => () => void;
+      onImportImage: (handler: () => void) => () => void;
       onSaveResult: (
         handler: (payload: { filePath: string; success: boolean; message?: string }) => void,
       ) => () => void;

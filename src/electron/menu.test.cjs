@@ -75,7 +75,7 @@ function loadMenu(platform) {
 
 for (const platform of ['darwin', 'win32']) {
   test(`${platform}: shortcuts placement, accelerators, and single dialog instance`, () => {
-    const { template, windows } = loadMenu(platform);
+    const { template, main, windows } = loadMenu(platform);
     const menu = template.find(
       (item) => item.label === (platform === 'darwin' ? 'QuickBoard' : 'File')
     );
@@ -84,6 +84,14 @@ for (const platform of ['darwin', 'win32']) {
     if (platform === 'darwin') assert.equal(menu.submenu[index - 1].label, 'About QuickBoard');
     assert.equal(menu.submenu.find((item) => item.label === 'Settings').accelerator, 'CmdOrCtrl+,');
     const file = template.find((item) => item.label === 'File');
+    const importImage = file.submenu.find((item) => item.label === 'Import').submenu[0];
+    importImage.click();
+    assert.deepEqual(main.messages.at(-1), ['quickboard:import-image', undefined]);
+    const edit = template.find((item) => item.label === 'Edit');
+    edit.submenu.find((item) => item.label === 'Copy Selection / Text').click();
+    assert.deepEqual(main.messages.at(-1), ['quickboard:shortcut', 'copy']);
+    edit.submenu.find((item) => item.label === 'Paste Selection / Text').click();
+    assert.deepEqual(main.messages.at(-1), ['quickboard:shortcut', 'paste']);
     assert.equal(file.submenu.find((item) => item.role === 'close').accelerator, 'CmdOrCtrl+w');
     const quit =
       platform === 'darwin'

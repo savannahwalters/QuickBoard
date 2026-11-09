@@ -174,6 +174,15 @@ function buildMenu(app, win, hooks = {}) {
           }
         },
       }),
+      {
+        label: 'Import',
+        submenu: [
+          {
+            label: 'Image...',
+            click: () => sendToMainWindow(win, 'quickboard:import-image'),
+          },
+        ],
+      },
       { type: 'separator' },
       shortcutMenuItem('export', {
         click: () => {
@@ -236,8 +245,12 @@ function buildMenu(app, win, hooks = {}) {
       ),
       { type: 'separator' },
       shortcutMenuItem('cut', { role: 'cut' }),
-      shortcutMenuItem('copy', { role: 'copy' }),
-      shortcutMenuItem('paste', { role: 'paste' }),
+      shortcutMenuItem('copy', {
+        click: () => sendToMainWindow(win, 'quickboard:shortcut', 'copy'),
+      }),
+      shortcutMenuItem('paste', {
+        click: () => sendToMainWindow(win, 'quickboard:shortcut', 'paste'),
+      }),
       shortcutMenuItem('select-all', { role: 'selectAll' }),
     ],
   };

@@ -31,6 +31,8 @@ export class TransformAction {
       if (state['y'] !== undefined) this.shape['y'] = state['y'];
     }
     if (state['scale'] !== undefined) this.shape['scale'] = state['scale'];
+    if (state['scaleX'] !== undefined) this.shape['scaleX'] = state['scaleX'];
+    if (state['scaleY'] !== undefined) this.shape['scaleY'] = state['scaleY'];
     if (state['width'] !== undefined) this.shape['width'] = state['width'];
     if (state['height'] !== undefined) this.shape['height'] = state['height'];
     if (state['rotation'] !== undefined) this.shape['rotation'] = state['rotation'];

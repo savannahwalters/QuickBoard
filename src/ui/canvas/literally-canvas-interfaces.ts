@@ -24,6 +24,7 @@ export interface LCInstance {
   drawingCoordsToClientCoords?(x: number, y: number): { x: number; y: number };
   undo(): void;
   redo(): void;
+  execute(action: { do(): void; undo(): void }): void;
   undoStack: unknown[];
   redoStack: unknown[];
   setTool(tool: LCTool): void;
@@ -43,7 +44,7 @@ export interface LCInstance {
   respondToSizeChange?: () => void;
   setShapesInProgress(shapes: unknown[]): void;
   saveShape(shape: unknown): void;
-  on(event: string, handler: (data: unknown) => void): void;
+  on(event: string, handler: (data: unknown) => void): (() => void) | void;
   getSnapshot(): Record<string, unknown>;
   getImage(opts?: {
     scale?: number;
@@ -78,6 +79,14 @@ export interface LiterallyCanvas {
   JSONToShape(shape: Record<string, unknown>): unknown;
   snapshotJSONToShapes(snapshot: string): unknown[];
   shapeToJSON(shape: unknown): Record<string, unknown>;
+  renderSnapshotToImage?(
+    snapshot: Record<string, unknown>,
+    options: {
+      rect: { x: number; y: number; width: number; height: number };
+      scale: number;
+      includeWatermark: boolean;
+    },
+  ): HTMLCanvasElement;
 }
 
 declare global {

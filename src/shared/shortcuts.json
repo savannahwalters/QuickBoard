@@ -82,7 +82,7 @@
   },
   {
     "id": "copy",
-    "label": "Copy Text",
+    "label": "Copy Selection / Text",
     "group": "Editing",
     "key": "c",
     "modifiers": ["primary"],
@@ -90,7 +90,7 @@
   },
   {
     "id": "paste",
-    "label": "Paste Text",
+    "label": "Paste Selection / Text",
     "group": "Editing",
     "key": "v",
     "modifiers": ["primary"],
