@@ -1,4 +1,5 @@
 import type { LCInstance, LCTool } from '../literally-canvas-interfaces';
+import { constrainSquare } from './drag-geometry';
 import {
   getSelectionBounds,
   getShapeBounds,
@@ -63,6 +64,7 @@ export class ImprovedSelectShape implements LCTool {
   private shift = false;
   private start: Point = { x: 0, y: 0 };
   private selectionEnd: Point = { x: 0, y: 0 };
+  private rawSelectionEnd: Point = { x: 0, y: 0 };
   private path: Point[] = [];
   private preview: Point | null = null;
   private marquee = false;
@@ -98,9 +100,16 @@ export class ImprovedSelectShape implements LCTool {
     const pointerDown = (event: PointerEvent) => {
       this.shift = event.shiftKey;
     };
-    const key = (event: KeyboardEvent) => {
-      this.shift = event.shiftKey;
+    const updateShift = (shift: boolean) => {
+      if (this.shift === shift) return;
+      this.shift = shift;
+      if (this.marquee && this.hasAspectConstraint()) {
+        this.updateSelectionEnd(this.rawSelectionEnd);
+        this.overlay();
+      }
     };
+    const key = (event: KeyboardEvent) => updateShift(event.shiftKey);
+    const blur = () => updateShift(false);
     const hover = (event: PointerEvent) => {
       if (this.gesture || this.marquee) return;
       const rect = lc.canvas.getBoundingClientRect();
@@ -114,11 +123,13 @@ export class ImprovedSelectShape implements LCTool {
     lc.canvas.addEventListener('pointermove', hover);
     window.addEventListener('keydown', key);
     window.addEventListener('keyup', key);
+    window.addEventListener('blur', blur);
     this.unsubscribers.push(() => {
       lc.canvas.removeEventListener('pointerdown', pointerDown, true);
       lc.canvas.removeEventListener('pointermove', hover);
       window.removeEventListener('keydown', key);
       window.removeEventListener('keyup', key);
+      window.removeEventListener('blur', blur);
     });
     this.overlay();
   }
@@ -130,6 +141,7 @@ export class ImprovedSelectShape implements LCTool {
     this.marquee = false;
     this.path = [];
     this.preview = null;
+    this.shift = false;
     this.hits.clear();
     lc.setShapesInProgress([]);
     lc.repaintLayer('main');
@@ -223,7 +235,7 @@ export class ImprovedSelectShape implements LCTool {
     if (this.selectionMode !== 'object') {
       if (this.selectionMode !== 'polygon' || !this.marquee) {
         this.start = { ...point };
-        this.selectionEnd = { ...point };
+        this.updateSelectionEnd(point);
         this.path = [];
         setSelectionRegion(this.lc, null);
         this.setSelected([]);
@@ -327,7 +339,7 @@ export class ImprovedSelectShape implements LCTool {
 
   private drag(point: Point): void {
     if (this.marquee) {
-      this.selectionEnd = { ...point };
+      this.updateSelectionEnd(point);
       this.preview = { ...point };
       if (this.selectionMode === 'lasso') this.path.push({ ...point });
       this.overlay();
@@ -422,7 +434,7 @@ export class ImprovedSelectShape implements LCTool {
           return;
         }
       } else {
-        this.selectionEnd = { ...point };
+        this.updateSelectionEnd(point);
         if (this.selectionMode === 'lasso') this.path.push({ ...point });
       }
       if (
@@ -490,6 +502,18 @@ export class ImprovedSelectShape implements LCTool {
       );
       this.lc.trigger('drawingChange', {});
     }
+  }
+
+  private hasAspectConstraint(): boolean {
+    return this.selectionMode === 'rectangle' || this.selectionMode === 'circle';
+  }
+
+  private updateSelectionEnd(point: Point): void {
+    this.rawSelectionEnd = { ...point };
+    this.selectionEnd =
+      this.shift && this.hasAspectConstraint()
+        ? constrainSquare(this.start, point)
+        : { ...point };
   }
 
   private overlay(): void {

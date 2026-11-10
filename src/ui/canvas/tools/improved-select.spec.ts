@@ -191,6 +191,53 @@ describe('selection interactions', () => {
     };
   }
 
+  it.each(['rectangle', 'circle'] as const)(
+    '%s marquee updates live on Shift press/release and commits constrained bounds',
+    (mode) => {
+      const h = setup();
+      h.lc.shapes.push(h.rectangle());
+      h.regionTool(mode);
+      h.lc.trigger('lc-pointerdown', { x: 90, y: 90 });
+      h.lc.trigger('lc-pointerdrag', { x: 180, y: 140 });
+      expect(h.overlays()[0]).toMatchObject({ end: { x: 180, y: 140 } });
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Shift', shiftKey: true }));
+      expect(h.overlays()[0]).toMatchObject({ end: { x: 180, y: 180 } });
+      window.dispatchEvent(new KeyboardEvent('keyup', { key: 'Shift' }));
+      expect(h.overlays()[0]).toMatchObject({ end: { x: 180, y: 140 } });
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Shift', shiftKey: true }));
+      h.lc.trigger('lc-pointerup', { x: 190, y: 150 });
+      expect(getSelectionRegion(h.lc)).toMatchObject({
+        start: { x: 90, y: 90 }, end: { x: 190, y: 190 }, mode,
+      });
+      expect(h.complete).toHaveBeenCalledOnce();
+    }
+  );
+
+  it.each(['rectangle', 'circle'] as const)(
+    '%s marquee honors held Shift, reverse drags and release before pointer-up',
+    (mode) => {
+      const h = setup();
+      h.lc.shapes.push(h.rectangle());
+      h.regionTool(mode);
+      h.lc.canvas.dispatchEvent(new MouseEvent('pointerdown', { shiftKey: true }));
+      h.lc.trigger('lc-pointerdown', { x: 200, y: 200 });
+      h.lc.trigger('lc-pointerdrag', { x: 100, y: 150 });
+      expect(h.overlays()[0]).toMatchObject({ end: { x: 100, y: 100 } });
+      window.dispatchEvent(new KeyboardEvent('keyup', { key: 'Shift' }));
+      h.lc.trigger('lc-pointerup', { x: 100, y: 150 });
+      expect(getSelectionRegion(h.lc)).toMatchObject({ end: { x: 100, y: 150 } });
+    }
+  );
+
+  it('does not constrain a lasso while Shift is held', () => {
+    const h = setup();
+    h.regionTool('lasso');
+    h.lc.trigger('lc-pointerdown', { x: 90, y: 90 });
+    h.lc.trigger('lc-pointerdrag', { x: 180, y: 140 });
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Shift', shiftKey: true }));
+    expect(h.overlays()[0]).toMatchObject({ end: { x: 180, y: 140 } });
+  });
+
   it('deletes only selected objects in one undoable step and clears the handles', () => {
     const h = setup();
     const first = h.rectangle();

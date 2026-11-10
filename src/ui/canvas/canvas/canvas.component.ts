@@ -30,6 +30,7 @@ import { Brush, ensureSquareBrushShapeRegistered } from '../../canvas/tools/brus
 import { ObjectEraser } from '../../canvas/tools/objecteraser';
 import { PixelEraser } from '../tools/pixel-eraser';
 import { BucketFill } from '../tools/bucketfill';
+import { ConstrainedShapeTool } from '../tools/constrained-shape';
 import { ImprovedSelectShape } from '../tools/improved-select';
 import { registerImprovedSelectShapes } from '../tools/improved-select/register-shapes';
 import { createPastedShapes, setCopiedShapes } from '../tools/improved-select/selection-clipboard';
@@ -513,8 +514,14 @@ export class CanvasComponent implements AfterViewInit, OnDestroy {
     this.toolInstances.set('pencil', new LC.tools.Pencil(this.lc));
     this.toolInstances.set('eraser', new PixelEraser(this.lc));
     this.toolInstances.set('brush', new Brush(this.lc));
-    this.toolInstances.set('rectangle', new LC.tools.Rectangle(this.lc));
-    this.toolInstances.set('circle', new LC.tools.Ellipse(this.lc));
+    this.toolInstances.set(
+      'rectangle',
+      new ConstrainedShapeTool(this.lc, new LC.tools.Rectangle(this.lc))
+    );
+    this.toolInstances.set(
+      'circle',
+      new ConstrainedShapeTool(this.lc, new LC.tools.Ellipse(this.lc))
+    );
     // Use the built-in LC polygon tool when available.
     const PolygonTool = LC.tools.Polygon ?? LC.tools.Triangle;
     if (PolygonTool) {
