@@ -33,8 +33,14 @@ import { BucketFill } from '../tools/bucketfill';
 import { ConstrainedShapeTool } from '../tools/constrained-shape';
 import { ImprovedSelectShape } from '../tools/improved-select';
 import { registerImprovedSelectShapes } from '../tools/improved-select/register-shapes';
-import { createPastedShapes, setCopiedShapes } from '../tools/improved-select/selection-clipboard';
+import {
+  readSelectionClipboard,
+  rememberCopiedImage,
+  setCopiedShapes,
+} from '../tools/improved-select/selection-clipboard';
 import { getSelectionBounds } from '../tools/improved-select/geometry';
+import { captureSelection, SelectionAction } from '../tools/improved-select/selection-action';
+import { getSelection, getSelectionRegion } from '../tools/improved-select/selection-state';
 import { ZoomTool } from '../tools/zoom';
 import { LCInstance, LCTool } from '../literally-canvas-interfaces';
 import { CanvasViewportController } from './canvas-viewport-controller';
@@ -159,31 +165,7 @@ export class CanvasComponent implements AfterViewInit, OnDestroy {
       const canvasDataChanged = this.canvasPersistence.hasCanvasDataChanged(currentBoardData);
 
       // Only reload when switching boards or when the canvas data reference changes
-      if (boardIdChanged) {
-        if (this.currentBoardId && this.lc && this._canvasDirty) {
-          const snapshot = this.lc.getSnapshot();
-          this.canvasDataService.setCanvasData(this.currentBoardId, {
-            shapes: [...this.lc.shapes],
-            backgroundShapes: [...this.lc.backgroundShapes],
-            snapshot,
-          });
-        }
-
-        // Ensure any deferred preview for the outgoing board is committed before switching.
-        this.canvasPersistence.flushPendingPreviewRegeneration(this.lc, this.currentBoardId);
-        // Save current board data before switching
-        if (this.currentBoardId && this.lc) {
-          this.canvasPersistence.persistCurrentBoardData(
-            this.lc,
-            this.currentBoardId,
-            this.currentBoardId,
-            true
-          );
-          this.store.updateBackgroundColor(this.currentBoardId, this.lc.getColor('background'));
-          this._canvasDirty = false;
-        }
-        this.loadBoardData(selectedBoardId);
-      } else if (canvasDataChanged) {
+      if (boardIdChanged || canvasDataChanged) {
         this.loadBoardData(selectedBoardId);
       }
     });
@@ -314,13 +296,17 @@ export class CanvasComponent implements AfterViewInit, OnDestroy {
   }
 
   public deleteSelection(): boolean {
-    return this.getActiveSelectionTool()?.deleteSelectedShapes() ?? false;
+    return (
+      this.getActiveSelectionTool()?.deleteSelectedShapes(() => {
+        if (this.lc) this.canvasUndoRedo.markStrokeStart(this.lc);
+      }) ?? false
+    );
   }
 
   public async copySelection(): Promise<void> {
     if (!this.lc) return;
     const tool = this.getActiveSelectionTool();
-    const selection = tool?.getSelectedShapes() ?? [];
+    const selection = tool?.getCopyShapes() ?? [];
     if (!selection.length) return;
 
     const serialized = selection.map((shape) => LC.shapeToJSON(shape));
@@ -354,6 +340,7 @@ export class CanvasComponent implements AfterViewInit, OnDestroy {
     }
     try {
       await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+      rememberCopiedImage(serialized, blob);
     } catch (error) {
       console.warn('Unable to copy the selection to the system image clipboard.', error);
     }
@@ -361,26 +348,27 @@ export class CanvasComponent implements AfterViewInit, OnDestroy {
 
   public async pasteSelection(): Promise<void> {
     if (!this.lc) return;
-    const pasted = createPastedShapes();
-    if (pasted.length) {
-      for (const shape of pasted) this.lc.saveShape(shape);
-      this.setTool('select');
-      this.getActiveSelectionTool()?.selectShapes(pasted);
+    const lc = this.lc;
+    const boardId = this.currentBoardId;
+    const content = await readSelectionClipboard();
+    if (!content) return;
+    if (this.lc !== lc || this.currentBoardId !== boardId) {
+      console.warn('Paste cancelled because the destination board changed.');
       return;
     }
-
-    if (!navigator.clipboard?.read) return;
-    try {
-      const items = await navigator.clipboard.read();
-      for (const item of items) {
-        if (!item.types.includes('image/png')) continue;
-        const image = await item.getType('image/png');
-        this.handleImageFile(new File([image], 'clipboard.png', { type: 'image/png' }));
-        return;
-      }
-    } catch (error) {
-      console.warn('Unable to read an image from the system clipboard.', error);
+    if ('shapes' in content) {
+      const pasted = content.shapes;
+      if (!pasted.length) return;
+      this.setTool('select');
+      this.canvasUndoRedo.markStrokeStart(lc);
+      const before = captureSelection(lc, getSelection(lc), getSelectionRegion(lc));
+      lc.shapes.push(...pasted);
+      this.getActiveSelectionTool()?.selectShapes(pasted);
+      lc.execute(new SelectionAction(lc, before, captureSelection(lc, pasted, null)));
+      lc.trigger('drawingChange', {});
+      return;
     }
+    this.handleImageFile(new File([content.image], 'clipboard-image', { type: content.image.type }));
   }
 
   private initializeCanvas(): void {
@@ -561,6 +549,28 @@ export class CanvasComponent implements AfterViewInit, OnDestroy {
   private loadBoardData(boardId: string) {
     if (!this.lc) return;
 
+    // Commit against the outgoing scene before its objects, history or board ID change.
+    const activeTool = this.lc.tool;
+    activeTool.willBecomeInactive?.(this.lc);
+    this.lc.isDragging = false;
+    if (this.currentBoardId && this.currentBoardId !== boardId) {
+      if (this._canvasDirty) {
+        this.canvasDataService.setCanvasData(this.currentBoardId, {
+          shapes: [...this.lc.shapes],
+          backgroundShapes: [...this.lc.backgroundShapes],
+          snapshot: this.lc.getSnapshot(),
+        });
+      }
+      this.canvasPersistence.flushPendingPreviewRegeneration(this.lc, this.currentBoardId);
+      this.canvasPersistence.persistCurrentBoardData(
+        this.lc,
+        this.currentBoardId,
+        this.currentBoardId,
+        true
+      );
+      this.store.updateBackgroundColor(this.currentBoardId, this.lc.getColor('background'));
+    }
+
     ensureSquareBrushShapeRegistered();
 
     const boards = this.store.boards();
@@ -614,6 +624,7 @@ export class CanvasComponent implements AfterViewInit, OnDestroy {
     this.onionSkin.pruneToCurrentAndNeighbors(boardId);
 
     this.canvasUndoRedo.finishBoardLoad(this.lc);
+    activeTool.didBecomeActive?.(this.lc);
   }
 
   public flushCurrentBoardState(includePreviews = true): void {
@@ -1033,8 +1044,9 @@ export class CanvasComponent implements AfterViewInit, OnDestroy {
           scale: 1,
         });
 
-        this.lc.saveShape(imageShape);
         this.setTool('select');
+        this.canvasUndoRedo.markStrokeStart(this.lc);
+        this.lc.saveShape(imageShape);
         this.getActiveSelectionTool()?.selectShapes([imageShape as Record<string, unknown>]);
       };
       img.src = src;

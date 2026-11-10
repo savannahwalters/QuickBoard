@@ -4,6 +4,37 @@ import { resizeShapes, rotateShapes, translateShapes } from './shape-transforms'
 describe('vector selection resizing', () => {
   afterEach(() => vi.unstubAllGlobals());
 
+  it('moves mixed-style square brush points from immutable snapshots on every drag update', () => {
+    const data = {
+      points: [
+        { className: 'Point', data: { x: 10, y: 20, size: 5, color: 'red' } },
+        { className: 'Point', data: { x: 30, y: 40, size: 10, color: 'blue' } },
+      ],
+      spacing: 45,
+    };
+    vi.stubGlobal('LC', {
+      JSONToShape: (snapshot: { data: typeof data }) => ({
+        points: snapshot.data.points.map((point) => point.data),
+        move({ xDiff, yDiff }: { xDiff: number; yDiff: number }) {
+          this.points.forEach((point) => {
+            point.x -= xDiff;
+            point.y -= yDiff;
+          });
+        },
+      }),
+    });
+    const shape: Record<string, unknown> = {};
+    const states = new Map([[shape, { className: 'SquareLinePath', data }]]);
+    translateShapes(states, 10, 0);
+    translateShapes(states, 20, 0);
+    expect(shape['points']).toEqual([
+      { x: 30, y: 20, size: 5, color: 'red' },
+      { x: 50, y: 40, size: 10, color: 'blue' },
+    ]);
+    expect(data.points[0].data.x).toBe(10);
+    expect(data.points[1].data.x).toBe(30);
+  });
+
   it('moves both stroke point sets and images together without using inconsistent LC move methods', () => {
     vi.stubGlobal('LC', { JSONToShape: (snapshot: Record<string, unknown>) => snapshot['data'] });
     const stroke = {},

@@ -24,4 +24,12 @@ describe('selection handles', () => {
       );
     }
   );
+
+  it.each([0.25, 1, 4])('keeps thin-stroke handles clickable at zoom %s', (zoom) => {
+    const unit = 1 / zoom;
+    const thin = { x: 100, y: 100, width: 200, height: 1 };
+    expect(hitSelectionHandle(thin, { x: 200, y: 100 - 4 * unit }, unit)).toBe('group-t');
+    expect(hitSelectionHandle(thin, { x: 200, y: 101 + 4 * unit }, unit)).toBe('group-b');
+    expect(hitSelectionHandle(thin, { x: 100 - 3 * unit, y: 100.5 }, unit)).toBe('group-l');
+  });
 });

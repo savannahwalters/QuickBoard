@@ -26,6 +26,27 @@ describe('selection deletion shortcuts', () => {
     expect(event.defaultPrevented).toBe(true);
   });
 
+  it('advances from standalone Object Select to the drawing group with Tab', () => {
+    const switchTools = vi.fn();
+    const canvas = {
+      document,
+      activeTool: () => 'select',
+      switchTools,
+      containsElement: () => true,
+      toolbar: () => ({
+        isDrawToolActive: () => false,
+        isShapeToolActive: () => false,
+        isEraserToolActive: () => false,
+        isEditToolActive: () => false,
+        selectedDrawToolOption: () => ({ id: 'brush' }),
+      }),
+    } as unknown as CanvasComponent;
+    const event = new KeyboardEvent('keydown', { key: 'Tab', code: 'Tab', cancelable: true });
+    new CanvasShortcutsController(canvas).handleKeyDown(event);
+    expect(switchTools).toHaveBeenCalledExactlyOnceWith('brush');
+    expect(event.defaultPrevented).toBe(true);
+  });
+
   it('leaves the key untouched when nothing is selected', () => {
     const { controller, deleteSelection } = setup();
     deleteSelection.mockReturnValue(false);

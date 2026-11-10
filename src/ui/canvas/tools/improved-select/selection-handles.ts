@@ -33,12 +33,16 @@ export function hitSelectionHandle(
   unit = 1
 ): GroupHandle | null {
   if (bounds.width <= 0 || bounds.height <= 0) return null;
-  const radius = Math.min(10 * unit, bounds.width / 4, bounds.height / 4);
-  return (
-    selectionHandles(bounds, unit).find(
-      (handle) => Math.hypot(point.x - handle.x, point.y - handle.y) < radius
-    )?.mode ?? null
-  );
+  let closest: GroupHandle | null = null;
+  let distance = 10 * unit;
+  for (const handle of selectionHandles(bounds, unit)) {
+    const candidate = Math.hypot(point.x - handle.x, point.y - handle.y);
+    if (candidate < distance) {
+      closest = handle.mode;
+      distance = candidate;
+    }
+  }
+  return closest;
 }
 
 export function drawSelectionBox(

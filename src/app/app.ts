@@ -97,7 +97,10 @@ export class App implements OnInit, OnDestroy {
     if (window.quickboard?.onShortcut) {
       this.removeShortcutListener = window.quickboard.onShortcut((option: string) => {
         const target = document.activeElement as HTMLElement | null;
+        const sharedEditorHistory =
+          (option === 'undo' || option === 'redo') && !!target?.closest('#editorjs');
         if (
+          !sharedEditorHistory &&
           target &&
           (target.matches('input, textarea, select') ||
             target.isContentEditable ||

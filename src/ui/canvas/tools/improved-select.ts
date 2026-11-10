@@ -43,6 +43,7 @@ interface Gesture {
   before: SelectionSnapshot;
   states: ShapeSnapshots;
   crop: boolean;
+  stretch: boolean;
   changed: boolean;
   prepared: boolean;
   scene: unknown[] | null;
@@ -157,16 +158,27 @@ export class ImprovedSelectShape implements LCTool {
     return this.selected;
   }
 
-  deleteSelectedShapes(): boolean {
+  getCopyShapes(): readonly Shape[] {
+    const region = getSelectionRegion(this.lc);
+    return region ? region.shapes.flatMap((shape) => regionPieces(shape, region)) : this.selected;
+  }
+
+  deleteSelectedShapes(beforeDelete?: () => void): boolean {
     this.commitGesture();
     const selected = this.selected.filter((shape) => this.lc.shapes.includes(shape));
     if (!selected.length) return false;
-    const before = captureSelection(this.lc, selected, getSelectionRegion(this.lc));
+    beforeDelete?.();
+    const region = getSelectionRegion(this.lc);
+    const before = captureSelection(this.lc, selected, region);
     const removed = new Set(selected);
+    const remaining = (this.lc.shapes as Shape[]).flatMap((shape) => {
+      if (!removed.has(shape)) return [shape];
+      return region ? regionPieces(shape, region, false) : [];
+    });
     this.lc.shapes.splice(
       0,
       this.lc.shapes.length,
-      ...this.lc.shapes.filter((shape) => !removed.has(shape as Shape))
+      ...remaining
     );
     setSelectionRegion(this.lc, null);
     this.setSelected([]);
@@ -296,6 +308,7 @@ export class ImprovedSelectShape implements LCTool {
       before: captureSelection(this.lc, this.selected, getSelectionRegion(this.lc)),
       states: new Map(),
       crop: this.shift && ['group-t', 'group-b', 'group-l', 'group-r'].includes(mode),
+      stretch: this.shift || ['group-t', 'group-b', 'group-l', 'group-r'].includes(mode),
       changed: false,
       prepared: false,
       scene: null,
@@ -327,8 +340,7 @@ export class ImprovedSelectShape implements LCTool {
           shape,
           gesture.mode === 'move'
             ? 'move'
-            : gesture.mode !== 'group-rotate' &&
-              (this.shift || ['group-t', 'group-b', 'group-l', 'group-r'].includes(gesture.mode))
+            : gesture.mode !== 'group-rotate' && gesture.stretch
             ? 'stretch'
             : 'transform'
         );
@@ -377,7 +389,7 @@ export class ImprovedSelectShape implements LCTool {
       const anchor = { x: left ? x + width : x, y: top ? y + height : y };
       let sx = vertical ? 1 : Math.max(0.01, ((point.x - anchor.x) * (left ? -1 : 1)) / width);
       let sy = horizontal ? 1 : Math.max(0.01, ((point.y - anchor.y) * (top ? -1 : 1)) / height);
-      if (!horizontal && !vertical && !this.shift) sx = sy = Math.max(sx, sy);
+      if (!horizontal && !vertical && !gesture.stretch) sx = sy = Math.max(sx, sy);
       resizeShapes(gesture.states, anchor, sx, sy);
     }
     this.hits.clear();
@@ -481,9 +493,7 @@ export class ImprovedSelectShape implements LCTool {
     }
     const gesture = this.gesture;
     if (!gesture) return;
-    if (gesture.changed) {
-      this.drag(point);
-    }
+    this.drag(point);
     this.commitGesture();
     this.lc.canvas.style.cursor = 'default';
     this.overlay();

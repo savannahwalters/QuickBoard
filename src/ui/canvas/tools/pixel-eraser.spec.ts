@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { LCInstance } from '../literally-canvas-interfaces';
 import { imageShape } from './improved-select/selection-raster';
 import { PixelEraser } from './pixel-eraser';
+import { CanvasComponent } from '../canvas/canvas.component';
 
 describe('pixel eraser strokes', () => {
   let render: ReturnType<typeof vi.fn>;
@@ -214,6 +215,55 @@ describe('pixel eraser strokes', () => {
     tool.begin(50, 15);
     tool.willBecomeInactive();
     tool.willBecomeInactive();
+    expect(actions).toHaveLength(1);
+  });
+
+  it('finishes against the outgoing board before loading another scene, ignoring a late release', () => {
+    const { tool, lc, actions, shape } = setup();
+    lc.tool = tool;
+    lc.isDragging = true;
+    const destination = { className: 'DestinationShape' };
+    const destinationSnapshot = { shapes: [destination] };
+    const persist = vi.fn(() => {
+      expect(harness.currentBoardId).toBe('source');
+      expect(actions).toHaveLength(1);
+      expect(lc.shapes[0]).not.toBe(shape);
+    });
+    const harness = {
+      lc, currentBoardId: 'source', _canvasDirty: true,
+      store: {
+        boards: () => [{ id: 'destination', previewUrl: 'existing', backgroundColor: '#ffffff' }],
+        width: () => 100, height: () => 30, updateBackgroundColor: vi.fn(),
+      },
+      canvasDataService: {
+        setCanvasData: vi.fn(),
+        getBoardCache: () => ({ shapes: [destination], backgroundShapes: [], snapshot: destinationSnapshot }),
+      },
+      canvasPersistence: {
+        flushPendingPreviewRegeneration: vi.fn(),
+        persistCurrentBoardData: persist,
+        setLastLoadedCanvasData: vi.fn(),
+      },
+      canvasUndoRedo: { beginBoardLoad: vi.fn(), finishBoardLoad: vi.fn() },
+      toolInstances: new Map(),
+      backgroundColor: { set: vi.fn() },
+      scheduleCanvasFit: vi.fn(),
+      onionSkin: { updateCurrentBoardPreview: vi.fn(), pruneToCurrentAndNeighbors: vi.fn() },
+    };
+    Object.assign(lc, {
+      getSnapshot: () => ({ shapes: [...lc.shapes] }),
+      getColor: () => '#ffffff',
+      setColor: vi.fn(),
+      setImageSize: vi.fn(),
+    });
+    tool.begin(50, 0);
+    Reflect.apply(Reflect.get(CanvasComponent.prototype, 'loadBoardData'), harness, ['destination']);
+    expect(persist).toHaveBeenCalledOnce();
+    expect(harness.currentBoardId).toBe('destination');
+    expect(lc.shapes).toEqual([destination]);
+    expect(lc.isDragging).toBe(false);
+    tool.end(50, 30);
+    expect(lc.shapes).toEqual([destination]);
     expect(actions).toHaveLength(1);
   });
 

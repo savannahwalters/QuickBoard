@@ -177,8 +177,8 @@ export class CanvasShortcutsController {
           this.canvas.switchTools(tb.selectedEraserToolOption()?.id as string);
         } else if (tb?.isEraserToolActive()) {
           this.canvas.switchTools('bucket-fill');
-        } else if (tb?.isEditToolActive()) {
-          this.canvas.switchTools(tb.selectedDrawToolOption()?.id as string);
+        } else if (this.canvas.activeTool() === 'select' || tb?.isEditToolActive()) {
+          this.canvas.switchTools(tb?.selectedDrawToolOption()?.id ?? 'pencil');
         } else if (this.canvas.activeTool() === 'bucket-fill') {
           this.canvas.switchTools('zoom');
         } else if (this.canvas.activeTool() === 'zoom') {

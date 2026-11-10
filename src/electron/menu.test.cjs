@@ -22,6 +22,12 @@ function loadMenu(platform) {
         redo: () => {
           this.redone = true;
         },
+        copy: () => {
+          this.copied = true;
+        },
+        paste: () => {
+          this.pasted = true;
+        },
       };
       windows.push(this);
     }
@@ -122,6 +128,24 @@ for (const platform of ['darwin', 'win32']) {
     assert.equal(main.messages.length, 1);
   });
 
+  test(`${platform}: copy/paste stay in the focused dialog, not the background project`, () => {
+    const { template, main, windows, rebuild } = loadMenu(platform);
+    const menu = template.find(
+      (item) => item.label === (platform === 'darwin' ? 'QuickBoard' : 'File')
+    );
+    menu.submenu.find((item) => item.label === 'Settings').click();
+    const settings = windows[1];
+    settings.focus();
+    const edit = rebuild(main).find((item) => item.label === 'Edit');
+    edit.submenu.find((item) => item.label === 'Copy Selection / Text').click();
+    edit.submenu.find((item) => item.label === 'Paste Selection / Text').click();
+    assert.equal(settings.copied, true);
+    assert.equal(settings.pasted, true);
+    assert.equal(main.messages.length, 0);
+    settings.isDestroyed = () => true;
+    edit.submenu.find((item) => item.label === 'Paste Selection / Text').click();
+    assert.equal(main.messages.length, 0);
+  });
   test(`${platform}: rebuilt menus never send project actions to dialog windows`, () => {
     const { template, main, windows, rebuild } = loadMenu(platform);
     const menu = template.find(

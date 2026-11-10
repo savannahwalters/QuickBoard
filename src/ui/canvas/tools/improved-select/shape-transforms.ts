@@ -53,7 +53,10 @@ export function prepareTransform(
 export function translateShapes(snapshots: ShapeSnapshots, dx: number, dy: number): void {
   for (const [shape, snapshot] of snapshots) {
     const data = snapshot['data'] as Record<string, unknown>;
-    if (nativeShapes.has(snapshot['className'] as string)) {
+    if (
+      nativeShapes.has(snapshot['className'] as string) ||
+      snapshot['className'] === 'SquareLinePath'
+    ) {
       restoreShapes(
         new Map([
           [

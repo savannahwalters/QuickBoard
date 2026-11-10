@@ -1,9 +1,52 @@
 import { prepareTransform, snapshotShapes, translateShapes } from './shape-transforms';
 
 let copiedShapes: Record<string, unknown>[] = [];
+let copiedImage: Blob | null = null;
 
 export function setCopiedShapes(shapes: Record<string, unknown>[]): void {
   copiedShapes = shapes;
+  copiedImage = null;
+}
+
+export function rememberCopiedImage(shapes: Record<string, unknown>[], image: Blob): void {
+  if (copiedShapes === shapes) copiedImage = image;
+}
+
+export async function readSelectionClipboard(): Promise<
+  { shapes: Record<string, unknown>[] } | { image: Blob } | null
+> {
+  const image = await readSystemImage();
+  if (image === undefined) return { shapes: createPastedShapes() };
+  if (!image) return null;
+  if (copiedImage && image.type === copiedImage.type && image.size === copiedImage.size) {
+    const [current, saved] = await Promise.all([image.arrayBuffer(), copiedImage.arrayBuffer()]);
+    const bytes = new Uint8Array(saved);
+    if (new Uint8Array(current).every((byte, index) => byte === bytes[index])) {
+      return { shapes: createPastedShapes() };
+    }
+  }
+  return { image };
+}
+
+async function readSystemImage(): Promise<Blob | null | undefined> {
+  if (!navigator.clipboard?.read) return undefined;
+  try {
+    const items = await navigator.clipboard.read();
+    for (const item of items) {
+      const type =
+        item.types.find((type) => type === 'image/png') ??
+        item.types.find((type) => type.startsWith('image/'));
+      if (!type) continue;
+      return await item.getType(type);
+    }
+    return null;
+  } catch (error) {
+    console.warn(
+      'Unable to read the system clipboard; using the internal selection clipboard.',
+      error
+    );
+    return undefined;
+  }
 }
 
 export function createPastedShapes(): Record<string, unknown>[] {

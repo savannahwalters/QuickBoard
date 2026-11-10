@@ -263,20 +263,185 @@ describe('selection interactions', () => {
     expect(h.overlays()).toEqual([]);
   });
 
-  it('deletes whole selected objects even when selected with a partial region', () => {
+  it('captures deletion history only after committing a pending move', () => {
+    const h = setup();
+    const shape = h.rectangle();
+    h.lc.shapes.push(shape);
+    h.activate(h.objectTool);
+    h.objectTool.selectShapes([shape]);
+    h.lc.trigger('lc-pointerdown', { x: 129, y: 144 });
+    h.lc.trigger('lc-pointerdrag', { x: 139, y: 164 });
+    const capture = vi.fn(() => {
+      expect(h.actions).toHaveLength(1);
+      expect(shape).toMatchObject({ x: 110, y: 120 });
+      expect(h.lc.shapes).toEqual([shape]);
+    });
+    h.objectTool.deleteSelectedShapes(capture);
+    expect(capture).toHaveBeenCalledOnce();
+    expect(h.actions).toHaveLength(2);
+  });
+
+  it('applies a quick move even without an intermediate drag event', () => {
+    const h = setup();
+    const shape = h.rectangle();
+    h.lc.shapes.push(shape);
+    h.activate(h.objectTool);
+    h.objectTool.selectShapes([shape]);
+    h.lc.trigger('lc-pointerdown', { x: 129, y: 144 });
+    h.lc.trigger('lc-pointerup', { x: 159, y: 154 });
+    expect(shape).toMatchObject({ x: 130, y: 110 });
+    expect(h.actions).toHaveLength(1);
+    h.actions[0].undo();
+    expect(shape).toMatchObject({ x: 100, y: 100 });
+  });
+
+  it('applies a quick corner resize without an intermediate drag event', () => {
+    const h = setup();
+    const shape = h.rectangle();
+    h.lc.shapes.push(shape);
+    h.activate(h.objectTool);
+    h.objectTool.selectShapes([shape]);
+    h.lc.trigger('lc-pointerdown', { x: 201, y: 201 });
+    h.lc.trigger('lc-pointerup', { x: 303, y: 303 });
+    expect(shape).toMatchObject({ width: 200, height: 200 });
+    expect(h.actions).toHaveLength(1);
+    h.actions[0].undo();
+    expect(shape).toMatchObject({ width: 100, height: 100 });
+  });
+
+  it('latches uniform corner resizing when Shift is pressed after the drag begins', () => {
+    const h = setup();
+    const shape = h.rectangle();
+    shape['rotation'] = Math.PI / 4;
+    h.lc.shapes.push(shape);
+    h.activate(h.objectTool);
+    h.objectTool.selectShapes([shape]);
+    const bounds = getSelectionBounds([shape]);
+    h.lc.trigger('lc-pointerdown', { x: bounds.x + bounds.width, y: bounds.y + bounds.height });
+    h.lc.trigger('lc-pointerdrag', {
+      x: bounds.x + bounds.width * 1.5, y: bounds.y + bounds.height * 2,
+    });
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Shift', shiftKey: true }));
+    h.lc.trigger('lc-pointerup', {
+      x: bounds.x + bounds.width * 2, y: bounds.y + bounds.height * 3,
+    });
+    expect(shape['className']).toBe('Rectangle');
+    expect(shape['width']).toBeCloseTo(shape['height'] as number);
+    expect(shape['rotation']).toBe(Math.PI / 4);
+  });
+
+  it.each(['Rectangle', 'Ellipse', 'Image'])(
+    'latches screen-space stretching of a rotated %s when Shift is released mid-drag',
+    (className) => {
+      const h = setup();
+      const shape = className === 'Image'
+        ? h.api.createShape('Image', {
+            x: 100, y: 100,
+            image: Object.assign(document.createElement('canvas'), { width: 100, height: 100 }),
+            rotation: Math.PI / 4,
+          })
+        : h.api.createShape(className, {
+            x: 100, y: 100, width: 100, height: 100, strokeWidth: 2, rotation: Math.PI / 4,
+          });
+      h.lc.shapes.push(shape);
+      h.activate(h.objectTool);
+      h.objectTool.selectShapes([shape]);
+      const originalBounds = getSelectionBounds([shape]);
+      const bounds = h.overlays()[0].getBoundingRect();
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Shift', shiftKey: true }));
+      h.lc.trigger('lc-pointerdown', { x: bounds.x + bounds.width, y: bounds.y + bounds.height });
+      h.lc.trigger('lc-pointerdrag', {
+        x: bounds.x + bounds.width * 1.5, y: bounds.y + bounds.height * 2,
+      });
+      window.dispatchEvent(new KeyboardEvent('keyup', { key: 'Shift' }));
+      h.lc.trigger('lc-pointerup', {
+        x: bounds.x + bounds.width * 2, y: bounds.y + bounds.height * 3,
+      });
+      expect(shape['className']).toBe('Image');
+      expect(shape['rotation']).toBe(0);
+      const resized = getShapeBounds(shape)!;
+      expect(resized.width).toBeCloseTo(originalBounds.width * 2);
+      expect(resized.height).toBeCloseTo(originalBounds.height * 3);
+    }
+  );
+
+
+  it.each(['rectangle', 'circle', 'polygon', 'lasso'] as const)(
+    'deletes only the region selected with %s and restores it on undo',
+    (mode) => {
+      const h = setup();
+      const shape = h.rectangle();
+      const overlapping = h.rectangle();
+      const untouched = h.rectangle();
+      untouched['x'] = 400;
+      h.lc.shapes.push(shape, untouched, overlapping);
+      h.regionTool(mode);
+      h.lc.trigger('lc-pointerdown', { x: 110, y: 110 });
+      if (mode === 'polygon') {
+        h.lc.trigger('lc-pointerup', { x: 110, y: 110 });
+        h.click(150, 110);
+        h.click(150, 190);
+        h.click(110, 190);
+        h.click(110, 110);
+      } else if (mode === 'lasso') {
+        h.lc.trigger('lc-pointerdrag', { x: 150, y: 110 });
+        h.lc.trigger('lc-pointerdrag', { x: 150, y: 190 });
+        h.lc.trigger('lc-pointerup', { x: 110, y: 190 });
+      } else {
+        h.lc.trigger('lc-pointerup', { x: 150, y: 190 });
+      }
+      expect(getSelectionRegion(h.lc)).not.toBeNull();
+      const region = getSelectionRegion(h.lc);
+      const contexts: CanvasRenderingContext2D[] = [];
+      const getContext = vi.mocked(HTMLCanvasElement.prototype.getContext).getMockImplementation()!;
+      vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(function (
+        this: HTMLCanvasElement
+      ) {
+        const context = getContext.call(this, '2d') as CanvasRenderingContext2D;
+        contexts.push(context);
+        return context;
+      });
+      expect(h.objectTool.deleteSelectedShapes()).toBe(true);
+      expect(h.lc.shapes).toHaveLength(3);
+      expect(h.lc.shapes).not.toContain(shape);
+      expect(h.lc.shapes[1]).toBe(untouched);
+      expect(
+        contexts.filter((ctx) => ctx.globalCompositeOperation === 'destination-out')
+      ).toHaveLength(2);
+      expect(h.lc.shapes[0]).toMatchObject({ className: 'Image' });
+      expect(h.lc.shapes[2]).toMatchObject({ className: 'Image' });
+      expect(getSelectionRegion(h.lc)).toBeNull();
+      expect(h.objectTool.getSelectedShapes()).toEqual([]);
+      expect(h.overlays()).toEqual([]);
+      const fragments = [...h.lc.shapes];
+      expect(h.actions).toHaveLength(1);
+      h.actions[0].undo();
+      h.lc.trigger('drawingChange', {});
+      expect(h.lc.shapes).toEqual([shape, untouched, overlapping]);
+      expect(getSelectionRegion(h.lc)).toBe(region);
+      h.actions[0].do();
+      h.lc.trigger('drawingChange', {});
+      expect(h.lc.shapes).toEqual(fragments);
+      expect(getSelectionRegion(h.lc)).toBeNull();
+    }
+  );
+
+  it('copies clipped region fragments without changing the source scene or selection', () => {
     const h = setup();
     const shape = h.rectangle();
     h.lc.shapes.push(shape);
     h.regionTool('rectangle');
     h.lc.trigger('lc-pointerdown', { x: 110, y: 110 });
-    h.lc.trigger('lc-pointerup', { x: 190, y: 190 });
-    expect(getSelectionRegion(h.lc)).not.toBeNull();
-    expect(h.objectTool.deleteSelectedShapes()).toBe(true);
-    expect(h.lc.shapes).toEqual([]);
-    expect(getSelectionRegion(h.lc)).toBeNull();
-    h.actions[0].undo();
+    h.lc.trigger('lc-pointerup', { x: 150, y: 180 });
+    const region = getSelectionRegion(h.lc);
+    const copied = h.objectTool.getCopyShapes();
+    expect(copied).toHaveLength(1);
+    expect(copied[0]['className']).toBe('Image');
+    expect(getSelectionBounds(copied)).toEqual({ x: 119, y: 129, width: 20, height: 30 });
+    expect(h.objectTool.getSelectedShapes()).toEqual([shape]);
+    expect(getSelectionRegion(h.lc)).toBe(region);
     expect(h.lc.shapes).toEqual([shape]);
-    expect(getSelectionRegion(h.lc)).not.toBeNull();
+    expect(h.actions).toHaveLength(0);
   });
 
   it.each([
