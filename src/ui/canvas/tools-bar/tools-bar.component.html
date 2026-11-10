@@ -26,7 +26,10 @@
       (mouseleave)="hideTooltip()"
       [attr.aria-label]="selectedEditToolOption().label"
     >
-      {{ selectedEditToolOption().icon }}
+      <ng-container
+        [ngTemplateOutlet]="toolIcon"
+        [ngTemplateOutletContext]="{ $implicit: selectedEditToolOption() }"
+      ></ng-container>
       <span class="submenu-indicator" aria-hidden="true"></span>
     </button>
 
@@ -171,7 +174,10 @@
       [attr.aria-label]="submenuTool.label"
       role="menuitem"
     >
-      {{ submenuTool.icon }}
+      <ng-container
+        [ngTemplateOutlet]="toolIcon"
+        [ngTemplateOutletContext]="{ $implicit: submenuTool }"
+      ></ng-container>
     </button>
     }
   </div>
@@ -180,4 +186,14 @@
     {{ tooltipText() }}
   </div>
   }
+
+  <ng-template #toolIcon let-tool>
+    @if (tool.iconPath) {
+    <svg class="selection-tool-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path [attr.d]="tool.iconPath" [attr.pathLength]="tool.iconPathLength"></path>
+    </svg>
+    } @else {
+    {{ tool.icon }}
+    }
+  </ng-template>
 </div>

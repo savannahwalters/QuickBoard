@@ -1,4 +1,4 @@
-import { DOCUMENT } from '@angular/common';
+import { DOCUMENT, NgTemplateOutlet } from '@angular/common';
 import {
   ChangeDetectionStrategy,
   Component,
@@ -17,10 +17,13 @@ type ToolOption = Readonly<{
   id: string;
   label: string;
   icon: string;
+  iconPath?: string;
+  iconPathLength?: number;
 }>;
 
 @Component({
   selector: 'app-tools-bar',
+  imports: [NgTemplateOutlet],
   templateUrl: './tools-bar.component.html',
   styleUrls: ['./tools-bar.component.css'],
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -49,10 +52,33 @@ export class ToolsBarComponent implements OnDestroy {
     { id: 'object-eraser', label: 'Object Eraser', icon: '🧹' },
   ];
   readonly editTools: readonly ToolOption[] = [
-    { id: 'rectangle-select', label: 'Rectangle Select', icon: '▭' },
-    { id: 'circle-select', label: 'Circle Select', icon: '◯' },
-    { id: 'polygon-select', label: 'Polygon Select', icon: '△' },
-    { id: 'lasso-select', label: 'Lasso Select', icon: '〰️' },
+    {
+      id: 'rectangle-select',
+      label: 'Rectangle Select',
+      icon: '',
+      iconPath: 'M4 4H20V20H4Z',
+      iconPathLength: 64,
+    },
+    {
+      id: 'circle-select',
+      label: 'Circle Select',
+      icon: '',
+      iconPath: 'M12 3A9 9 0 1 1 12 21A9 9 0 1 1 12 3Z',
+      iconPathLength: 60,
+    },
+    {
+      id: 'polygon-select',
+      label: 'Polygon Select',
+      icon: '',
+      iconPath: 'M3 9L8 6L11 10L18 3L22 16L12 21L8 15L3 16Z',
+    },
+    {
+      id: 'lasso-select',
+      label: 'Lasso Select',
+      icon: '',
+      iconPath:
+        'M7 16C4 15 3 12 4 9C6 6 9 6 12 4C16 1 21 4 21 8C22 13 17 16 10 16C8 16 7 15 7 16C7 20 9 23 11 21',
+    },
   ];
 
   readonly selectedDrawTool = signal<'pencil' | 'brush'>('pencil');

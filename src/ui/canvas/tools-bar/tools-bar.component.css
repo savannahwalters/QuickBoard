@@ -60,6 +60,31 @@
   position: relative;
 }
 
+.selection-tool-icon {
+  width: 23px;
+  height: 23px;
+  fill: none;
+  stroke: var(--text-default);
+  stroke-width: 1.6;
+  stroke-dasharray: 1 2.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  pointer-events: none;
+}
+
+.tool-button.active .selection-tool-icon {
+  stroke: var(--text-on-accent);
+}
+
+.selection-tool-icon path[pathLength] {
+  stroke-dasharray: 1 3;
+  stroke-dashoffset: 0.5;
+}
+
+.selection-tool-icon path[pathLength='60'] {
+  stroke-dasharray: 1 2.75;
+}
+
 .fullscreen-toggle-icon {
   position: relative;
   display: block;

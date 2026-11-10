@@ -1,4 +1,5 @@
 import type { SelectionBounds } from './geometry';
+import { selectionColors } from './selection-style';
 
 export type GroupHandle =
   | 'group-tl'
@@ -46,20 +47,23 @@ export function drawSelectionBox(
   unit = 1
 ): void {
   const { x, y, width, height } = bounds;
+  const colors = selectionColors();
   ctx.save();
   ctx.lineWidth = unit;
   ctx.setLineDash([2 * unit, 3 * unit]);
   ctx.strokeStyle = '#ffffff';
   ctx.strokeRect(x, y, width, height);
   ctx.lineDashOffset = 2.5 * unit;
-  ctx.strokeStyle = '#202020';
+  ctx.strokeStyle = colors.border;
   ctx.strokeRect(x, y, width, height);
   ctx.setLineDash([]);
   ctx.beginPath();
   ctx.moveTo(x + width / 2, y);
   ctx.lineTo(x + width / 2, y - 25 * unit);
   ctx.stroke();
-  ctx.fillStyle = '#ffffff';
+  ctx.fillStyle = colors.handle;
+  ctx.strokeStyle = '#ffffff';
+  ctx.lineWidth = 1.5 * unit;
   for (const handle of selectionHandles(bounds, unit)) {
     ctx.beginPath();
     ctx.arc(handle.x, handle.y, (handle.mode === 'group-rotate' ? 5 : 4) * unit, 0, Math.PI * 2);

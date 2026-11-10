@@ -1,6 +1,7 @@
 import { getSelectionBounds } from './geometry';
 import { registerRotatableShapes } from './rotatable-shapes';
 import { drawSelectionBox } from './selection-handles';
+import { selectionColors } from './selection-style';
 
 export function registerImprovedSelectShapes(LC: Record<string, unknown>): void {
   if (
@@ -236,7 +237,7 @@ export function registerImprovedSelectShapes(LC: Record<string, unknown>): void 
       }
 
       ctx.stroke();
-      ctx.strokeStyle = '#202020';
+      ctx.strokeStyle = selectionColors().border;
       ctx.lineDashOffset = 2.5 * unit;
       ctx.stroke();
       if (mode === 'polygon' && path.length) {

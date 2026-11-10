@@ -420,7 +420,10 @@ describe('selection interactions', () => {
     h.lc.shapes.push(...shapes);
     h.activate(h.objectTool);
     h.objectTool.selectShapes(shapes, h.lc);
+    h.lc.canvas.dispatchEvent(new MouseEvent('pointermove', { clientX: 150, clientY: 74 }));
+    expect(h.lc.canvas.style.cursor).toBe('pointer');
     h.lc.trigger('lc-pointerdown', { x: 150, y: 74 });
+    expect(h.lc.canvas.style.cursor).toBe('pointer');
     h.lc.trigger('lc-pointerdrag', { x: 201, y: 125 });
     h.lc.trigger('lc-pointerup', { x: 201, y: 125 });
     expect(shapes[0]['rotation']).toBeCloseTo(Math.PI / 2);

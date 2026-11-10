@@ -1,5 +1,5 @@
 import type { LCInstance, LCTool } from '../literally-canvas-interfaces';
-import { getResizeCursorForAngle, getRotateCursor } from './improved-select/cursors';
+import { getResizeCursorForAngle } from './improved-select/cursors';
 import {
   getSelectionBounds,
   getShapeBounds,
@@ -198,7 +198,7 @@ export class ImprovedSelectShape implements LCTool {
 
   private cursor(mode: GroupHandle | null): string {
     if (!mode) return 'default';
-    if (mode === 'group-rotate') return getRotateCursor();
+    if (mode === 'group-rotate') return 'pointer';
     if (mode === 'group-l' || mode === 'group-r') return getResizeCursorForAngle(0);
     if (mode === 'group-t' || mode === 'group-b') return getResizeCursorForAngle(Math.PI / 2);
     return getResizeCursorForAngle(
