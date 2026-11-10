@@ -1,7 +1,7 @@
 import type { SelectionBounds } from './geometry';
 import type { SelectionRegion } from './selection-state';
 import { getShapeBounds } from './geometry';
-import { renderShape } from './shape-hit-testing';
+import { legacyMasks, renderShape } from './shape-hit-testing';
 
 type Shape = Record<string, unknown>;
 
@@ -39,9 +39,15 @@ function maskSelection(
   return canvas;
 }
 
-export function imageShape(canvas: HTMLCanvasElement, bounds: SelectionBounds): Shape {
+export function imageShape(
+  canvas: HTMLCanvasElement,
+  bounds: SelectionBounds,
+  mutable = false
+): Shape {
+  let source: string | undefined;
   Object.defineProperty(canvas, 'src', {
-    get: () => canvas.toDataURL('image/png'),
+    get: () =>
+      mutable ? canvas.toDataURL('image/png') : (source ??= canvas.toDataURL('image/png')),
     configurable: true,
   });
   return LC.createShape('Image', {
@@ -55,6 +61,32 @@ export function imageShape(canvas: HTMLCanvasElement, bounds: SelectionBounds): 
     scaleY: bounds.height / canvas.height,
     rotation: 0,
   }) as Shape;
+}
+
+export function bakeLegacyMasks(scene: readonly unknown[]): {
+  shapes: unknown[];
+  replacements: Map<Shape, Shape>;
+} {
+  const replacements = new Map<Shape, Shape>();
+  if (!(scene as readonly Shape[]).some((shape) => shape['className'] === 'ErasedLinePath')) {
+    return { shapes: [...scene], replacements };
+  }
+  // Bake every affected object before removing scene-wide masks so moved artwork is not erased again.
+  const shapes = (scene as readonly Shape[]).flatMap((shape) => {
+    if (shape['className'] === 'ErasedLinePath') return [];
+    if (!legacyMasks(shape, scene).length) return [shape];
+    const image = shape['image'];
+    if (image instanceof HTMLImageElement && (!image.complete || !image.naturalWidth)) {
+      throw new Error('Wait for board images to load before editing legacy-erased artwork.');
+    }
+    const bounds = getShapeBounds(shape);
+    if (!bounds) throw new Error('Cannot preserve legacy erasure on artwork without bounds.');
+    const baked = imageShape(renderShape(shape, bounds, scene), bounds);
+    if (shape['id']) baked['id'] = shape['id'];
+    replacements.set(shape, baked);
+    return [baked];
+  });
+  return { shapes, replacements };
 }
 
 export function connectedImages(canvas: HTMLCanvasElement, bounds: SelectionBounds): Shape[] {
@@ -122,8 +154,16 @@ export function connectedImages(canvas: HTMLCanvasElement, bounds: SelectionBoun
   return shapes;
 }
 
-export function regionPieces(shape: Shape, region: SelectionRegion, inside = true): Shape[] {
+export function regionPieces(
+  shape: Shape,
+  region: SelectionRegion,
+  inside = true,
+  scene: readonly unknown[] = []
+): Shape[] {
   const bounds = getShapeBounds(shape);
   if (!bounds || bounds.width <= 0 || bounds.height <= 0) return [];
-  return connectedImages(maskSelection(renderShape(shape, bounds), bounds, region, inside), bounds);
+  return connectedImages(
+    maskSelection(renderShape(shape, bounds, scene), bounds, region, inside),
+    bounds
+  );
 }

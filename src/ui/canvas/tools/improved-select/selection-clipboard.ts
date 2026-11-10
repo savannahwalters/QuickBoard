@@ -2,14 +2,25 @@ import { prepareTransform, snapshotShapes, translateShapes } from './shape-trans
 
 let copiedShapes: Record<string, unknown>[] = [];
 let copiedImage: Blob | null = null;
+let copyGeneration = 0;
+let clipboardWrite: Promise<void> = Promise.resolve();
 
-export function setCopiedShapes(shapes: Record<string, unknown>[]): void {
+export function setCopiedShapes(shapes: Record<string, unknown>[]): number {
   copiedShapes = shapes;
   copiedImage = null;
+  return ++copyGeneration;
 }
 
-export function rememberCopiedImage(shapes: Record<string, unknown>[], image: Blob): void {
-  if (copiedShapes === shapes) copiedImage = image;
+export function writeCopiedImage(generation: number, image: Blob): Promise<void> {
+  const write = clipboardWrite.then(async () => {
+    if (generation !== copyGeneration) return;
+    await navigator.clipboard.write([new ClipboardItem({ 'image/png': image })]);
+    if (generation === copyGeneration) copiedImage = image;
+  });
+  clipboardWrite = write.catch((error) => {
+    console.warn('Unable to copy the selection to the system image clipboard.', error);
+  });
+  return clipboardWrite;
 }
 
 export async function readSelectionClipboard(): Promise<

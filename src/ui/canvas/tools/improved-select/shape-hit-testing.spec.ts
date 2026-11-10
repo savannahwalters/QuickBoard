@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { ShapeHitTesting } from './shape-hit-testing';
+import { renderShape, ShapeHitTesting } from './shape-hit-testing';
 import { getShapeBounds } from './geometry';
 
 describe('renderer-based selection hit testing', () => {
@@ -37,6 +37,9 @@ describe('renderer-based selection hit testing', () => {
     const render = vi.fn((snapshot) => {
       const pixels = new Uint8ClampedArray(20 * 20 * 4);
       for (const [x, y] of snapshot.shapes[0].pixels) pixels[(y * 20 + x) * 4 + 3] = 255;
+      for (const mask of snapshot.shapes.slice(1)) {
+        for (const [x, y] of mask.pixels) pixels[(y * 20 + x) * 4 + 3] = 0;
+      }
       return {
         width: 20,
         height: 20,
@@ -49,7 +52,8 @@ describe('renderer-based selection hit testing', () => {
       pixels,
       getBoundingRect: () => ({ x: 0, y: 0, width: 20, height: 20 }),
     });
-    return { hits: new ShapeHitTesting(), shape, render };
+    const scene: Record<string, unknown>[] = [];
+    return { hits: new ShapeHitTesting(() => scene), shape, render, scene };
   }
 
   it('lets clicks pass through transparent fill pixels to strokes below', () => {
@@ -78,6 +82,28 @@ describe('renderer-based selection hit testing', () => {
     expect(hits.intersects(stroke, { x: 0, y: 0 }, { x: 5, y: 5 }, 'rectangle', [])).toBe(false);
   });
 
+  it.each(['rectangle', 'circle', 'polygon', 'lasso'] as const)(
+    'rejects distant %s marquees before rendering or allocating pixel buffers',
+    (mode) => {
+      const { hits, shape, render } = setup();
+      const object = shape('FutureShape', [[5, 5]]);
+      expect(hits.intersects(object, { x: 100, y: 100 }, { x: 200, y: 200 }, mode, [])).toBe(false);
+      expect(hits.intersects(object, { x: -100, y: -100 }, { x: -200, y: -200 }, mode, [])).toBe(
+        false
+      );
+      expect(render).not.toHaveBeenCalled();
+    }
+  );
+
+  it('rejects boundary-only overlap but still picks thin strokes with reversed endpoints', () => {
+    const { hits, shape, render } = setup();
+    const object = shape('LinePath', [[5, 5]]);
+    expect(hits.intersects(object, { x: 20, y: 0 }, { x: 30, y: 10 }, 'rectangle', [])).toBe(false);
+    expect(render).not.toHaveBeenCalled();
+    expect(hits.intersects(object, { x: 10, y: 10 }, { x: 0, y: 0 }, 'rectangle', [])).toBe(true);
+    expect(render).toHaveBeenCalledOnce();
+  });
+
   it('automatically supports future shape renderers without class-name hit-testing branches', () => {
     const { hits, shape } = setup();
     const future = shape('NewPluginShape', [[5, 5]]);
@@ -104,5 +130,28 @@ describe('renderer-based selection hit testing', () => {
     ]);
     expect(hits.visibleBounds(fill)).toEqual({ x: 5, y: 6, width: 4, height: 4 });
     expect(hits.visibleBounds(shape('Image', []))).toBeNull();
+  });
+
+  it('applies only later legacy eraser masks to picking and marquee membership', () => {
+    const { hits, shape, scene } = setup();
+    const earlierMask = shape('ErasedLinePath', [[5, 5]]);
+    const artwork = shape('LinePath', [
+      [5, 5],
+      [8, 8],
+    ]);
+    const laterMask = shape('ErasedLinePath', [[8, 8]]);
+    const newArtwork = shape('NewPluginShape', [[8, 8]]);
+    scene.push(earlierMask, artwork, laterMask, newArtwork);
+    expect(hits.hit(scene, { x: 5, y: 5 }, 0)).toBe(artwork);
+    expect(hits.hit([artwork], { x: 8, y: 8 }, 0)).toBeNull();
+    expect(hits.hit(scene, { x: 8, y: 8 }, 0)).toBe(newArtwork);
+    expect(hits.intersects(artwork, { x: 7, y: 7 }, { x: 10, y: 10 }, 'rectangle', [])).toBe(false);
+    expect(hits.intersects(laterMask, { x: 0, y: 0 }, { x: 20, y: 20 }, 'rectangle', [])).toBe(
+      false
+    );
+    const raster = renderShape(artwork, getShapeBounds(artwork)!, scene);
+    const pixels = raster.getContext('2d')!.getImageData(0, 0, 20, 20).data;
+    expect(pixels[(5 * 20 + 5) * 4 + 3]).toBe(255);
+    expect(pixels[(8 * 20 + 8) * 4 + 3]).toBe(0);
   });
 });

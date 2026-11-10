@@ -14,7 +14,7 @@ export class ObjectEraser implements LCTool {
   optionsStyle = 'stroke-width';
   usesSimpleAPI = true;
 
-  private readonly hits = new ShapeHitTesting();
+  private readonly hits = new ShapeHitTesting(() => this.lc.shapes);
   private before: SelectionSnapshot | null = null;
   private changed = false;
 

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { LCInstance } from '../literally-canvas-interfaces';
-import { imageShape } from './improved-select/selection-raster';
+import { bakeLegacyMasks, connectedImages, imageShape } from './improved-select/selection-raster';
 import { PixelEraser } from './pixel-eraser';
 import { CanvasComponent } from '../canvas/canvas.component';
 
@@ -79,13 +79,28 @@ describe('pixel eraser strokes', () => {
       rasters.set(this, context);
       return context;
     });
-    render = vi.fn((_snapshot, options) => {
+    render = vi.fn((snapshot, options) => {
       const canvas = document.createElement('canvas');
       canvas.width = options.rect.width;
       canvas.height = options.rect.height;
       const context = canvas.getContext('2d')!;
       const data = context.createImageData(canvas.width, canvas.height);
       if (opaque) data.data.fill(255);
+      for (const mask of snapshot.shapes.slice(1)) {
+        const bounds = mask.getBoundingRect();
+        for (let y = 0; y < canvas.height; y++) {
+          for (let x = 0; x < canvas.width; x++) {
+            if (
+              x + options.rect.x >= bounds.x &&
+              x + options.rect.x < bounds.x + bounds.width &&
+              y + options.rect.y >= bounds.y &&
+              y + options.rect.y < bounds.y + bounds.height
+            ) {
+              data.data[(y * canvas.width + x) * 4 + 3] = 0;
+            }
+          }
+        }
+      }
       context.putImageData(data, 0, 0);
       return canvas;
     });
@@ -181,6 +196,41 @@ describe('pixel eraser strokes', () => {
     tool.end(50, 30);
     expect(actions).toHaveLength(1);
     expect(lc.shapes).toHaveLength(3);
+  });
+
+  it('preserves legacy erased pixels while splitting and never converts the mask itself', () => {
+    const { tool, lc, shape, untouched, actions } = setup();
+    const mask = {
+      className: 'ErasedLinePath',
+      getBoundingRect: () => ({ x: 20, y: 0, width: 10, height: 30 }),
+    };
+    lc.shapes = [shape, mask, untouched];
+    tool.begin(50, 0);
+    tool.end(50, 30);
+    expect(lc.shapes.slice(0, 3)).toMatchObject([
+      { className: 'Image', x: 0, cropWidth: 20 },
+      { className: 'Image', x: 30, cropWidth: 15 },
+      { className: 'Image', x: 55, cropWidth: 45 },
+    ]);
+    expect(lc.shapes.slice(3)).toEqual([untouched]);
+    actions[0].undo();
+    expect(lc.shapes).toEqual([shape, mask, untouched]);
+    actions[0].do();
+    expect(lc.shapes.slice(3)).toEqual([untouched]);
+  });
+
+  it('does not remove legacy masks or change source objects while an affected image is loading', () => {
+    const { shape } = setup('Image');
+    const image = Object.assign(shape, { image: new Image() });
+    const mask = {
+      className: 'ErasedLinePath',
+      getBoundingRect: () => ({ x: 20, y: 0, width: 10, height: 30 }),
+    };
+    const scene = [image, mask];
+    expect(() => bakeLegacyMasks(scene)).toThrow('Wait for board images to load');
+    expect(scene).toEqual([image, mask]);
+    expect(image.className).toBe('Image');
+    expect(render).not.toHaveBeenCalled();
   });
 
   it('does not convert transparent objects or record empty strokes', () => {
@@ -286,8 +336,24 @@ describe('pixel eraser strokes', () => {
 
   it('serializes current pixels while an eraser preview is changing', () => {
     const canvas = document.createElement('canvas');
-    imageShape(canvas, { x: 0, y: 0, width: 10, height: 10 });
+    imageShape(canvas, { x: 0, y: 0, width: 10, height: 10 }, true);
     vi.mocked(canvas.toDataURL).mockReturnValue('data:image/png;base64,updated');
     expect(Reflect.get(canvas, 'src')).toBe('data:image/png;base64,updated');
+  });
+
+  it('encodes finalized connected fragments only once across repeated serializations', () => {
+    const { shape } = setup();
+    const source = LC.renderSnapshotToImage!(
+      { shapes: [shape] },
+      { rect: { x: 0, y: 0, width: 10, height: 10 }, scale: 1, includeWatermark: false }
+    );
+    const fragments = connectedImages(source, { x: 0, y: 0, width: 10, height: 10 });
+    const image = fragments[0]['image'] as HTMLCanvasElement;
+    const encode = vi.mocked(image.toDataURL);
+    encode.mockClear();
+    expect(Reflect.get(image, 'src')).toBe('data:image/png;base64,test');
+    expect(Reflect.get(image, 'src')).toBe('data:image/png;base64,test');
+    expect(Reflect.get(image, 'src')).toBe('data:image/png;base64,test');
+    expect(encode).toHaveBeenCalledTimes(1);
   });
 });

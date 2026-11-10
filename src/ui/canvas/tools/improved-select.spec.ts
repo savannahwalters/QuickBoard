@@ -309,7 +309,7 @@ describe('selection interactions', () => {
     expect(shape).toMatchObject({ width: 100, height: 100 });
   });
 
-  it('latches uniform corner resizing when Shift is pressed after the drag begins', () => {
+  it('unlinks corner scaling immediately when Shift is pressed during a drag', () => {
     const h = setup();
     const shape = h.rectangle();
     shape['rotation'] = Math.PI / 4;
@@ -322,16 +322,24 @@ describe('selection interactions', () => {
       x: bounds.x + bounds.width * 1.5, y: bounds.y + bounds.height * 2,
     });
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Shift', shiftKey: true }));
+    expect(getShapeBounds(shape)?.width).toBeCloseTo(bounds.width * 1.5);
+    expect(getShapeBounds(shape)?.height).toBeCloseTo(bounds.height * 2);
     h.lc.trigger('lc-pointerup', {
       x: bounds.x + bounds.width * 2, y: bounds.y + bounds.height * 3,
     });
+    expect(shape['className']).toBe('Image');
+    expect(getShapeBounds(shape)?.width).toBeCloseTo(bounds.width * 2);
+    expect(getShapeBounds(shape)?.height).toBeCloseTo(bounds.height * 3);
+    expect(h.actions).toHaveLength(1);
+    h.actions[0].undo();
     expect(shape['className']).toBe('Rectangle');
-    expect(shape['width']).toBeCloseTo(shape['height'] as number);
     expect(shape['rotation']).toBe(Math.PI / 4);
+    h.actions[0].do();
+    expect(getShapeBounds(shape)?.height).toBeCloseTo(bounds.height * 3);
   });
 
   it.each(['Rectangle', 'Ellipse', 'Image'])(
-    'latches screen-space stretching of a rotated %s when Shift is released mid-drag',
+    'toggles rotated %s corner scaling repeatedly without moving the pointer',
     (className) => {
       const h = setup();
       const shape = className === 'Image'
@@ -354,17 +362,74 @@ describe('selection interactions', () => {
         x: bounds.x + bounds.width * 1.5, y: bounds.y + bounds.height * 2,
       });
       window.dispatchEvent(new KeyboardEvent('keyup', { key: 'Shift' }));
+      expect(shape['className']).toBe(className);
+      expect(shape['rotation']).toBe(Math.PI / 4);
+      expect(getShapeBounds(shape)?.width).toBeCloseTo(originalBounds.width * 2);
+      expect(getShapeBounds(shape)?.height).toBeCloseTo(originalBounds.height * 2);
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Shift', shiftKey: true }));
+      expect(shape['rotation']).toBe(0);
+      expect(getShapeBounds(shape)?.width).toBeCloseTo(originalBounds.width * 1.5);
+      expect(getShapeBounds(shape)?.height).toBeCloseTo(originalBounds.height * 2);
+      window.dispatchEvent(new KeyboardEvent('keyup', { key: 'Shift' }));
       h.lc.trigger('lc-pointerup', {
         x: bounds.x + bounds.width * 2, y: bounds.y + bounds.height * 3,
       });
-      expect(shape['className']).toBe('Image');
-      expect(shape['rotation']).toBe(0);
+      expect(shape['className']).toBe(className);
+      expect(shape['rotation']).toBe(Math.PI / 4);
       const resized = getShapeBounds(shape)!;
-      expect(resized.width).toBeCloseTo(originalBounds.width * 2);
+      expect(resized.width).toBeCloseTo(originalBounds.width * 3);
       expect(resized.height).toBeCloseTo(originalBounds.height * 3);
+      expect(h.actions).toHaveLength(1);
+      h.actions[0].undo();
+      expect(getShapeBounds(shape)).toEqual({
+        x: expect.closeTo(originalBounds.x),
+        y: expect.closeTo(originalBounds.y),
+        width: expect.closeTo(originalBounds.width),
+        height: expect.closeTo(originalBounds.height),
+      });
+      h.actions[0].do();
+      expect(getShapeBounds(shape)?.width).toBeCloseTo(originalBounds.width * 3);
     }
   );
 
+
+  it.each([
+    { left: false, top: false },
+    { left: true, top: false },
+    { left: false, top: true },
+    { left: true, top: true },
+  ])('updates grouped corner scaling on Shift and blur: %j', ({ left, top }) => {
+    const h = setup();
+    const shapes = [h.rectangle(), h.rectangle()];
+    h.lc.shapes.push(...shapes);
+    h.activate(h.objectTool);
+    h.objectTool.selectShapes(shapes);
+    const bounds = getSelectionBounds(shapes);
+    const anchor = {
+      x: left ? bounds.x + bounds.width : bounds.x,
+      y: top ? bounds.y + bounds.height : bounds.y,
+    };
+    const point = {
+      x: anchor.x + (left ? -1 : 1) * bounds.width * 1.5,
+      y: anchor.y + (top ? -1 : 1) * bounds.height * 2,
+    };
+    h.lc.trigger('lc-pointerdown', {
+      x: left ? bounds.x : bounds.x + bounds.width,
+      y: top ? bounds.y : bounds.y + bounds.height,
+    });
+    h.lc.trigger('lc-pointerdrag', point);
+    expect(getSelectionBounds(shapes).width).toBeCloseTo(bounds.width * 2);
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Shift', shiftKey: true }));
+    expect(getSelectionBounds(shapes).width).toBeCloseTo(bounds.width * 1.5);
+    expect(getSelectionBounds(shapes).height).toBeCloseTo(bounds.height * 2);
+    window.dispatchEvent(new Event('blur'));
+    expect(shapes.map((shape) => shape['className'])).toEqual(['Rectangle', 'Rectangle']);
+    expect(getSelectionBounds(shapes).width).toBeCloseTo(bounds.width * 2);
+    h.lc.trigger('lc-pointerup', point);
+    expect(h.actions).toHaveLength(1);
+    h.actions[0].undo();
+    expect(getSelectionBounds(shapes)).toEqual(bounds);
+  });
 
   it.each(['rectangle', 'circle', 'polygon', 'lasso'] as const)(
     'deletes only the region selected with %s and restores it on undo',
@@ -719,13 +784,15 @@ describe('selection interactions', () => {
     h.objectTool.selectShapes([original]);
     h.lc.trigger('lc-pointerdown', { x: 201, y: 150 });
     h.lc.trigger('lc-pointerdrag', { x: 303, y: 150 });
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Shift', shiftKey: true }));
+    window.dispatchEvent(new KeyboardEvent('keyup', { key: 'Shift' }));
     h.lc.trigger('lc-pointerup', { x: 303, y: 150 });
-    expect(original['width']).toBe(200);
-    expect(original['height']).toBe(100);
+    expect(original['className']).toBe('Image');
+    expect(getShapeBounds(original)).toEqual({ x: 99, y: 99, width: 204, height: 102 });
     h.actions[0].undo();
     expect(original['width']).toBe(100);
     h.actions[0].do();
-    expect(original['width']).toBe(200);
+    expect(getShapeBounds(original)).toEqual({ x: 99, y: 99, width: 204, height: 102 });
   });
 
   it('crops a mixed group with Shift-edge drag and restores vectors and order on undo', () => {
@@ -738,6 +805,7 @@ describe('selection interactions', () => {
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Shift', shiftKey: true }));
     h.lc.trigger('lc-pointerdown', { x: 201, y: 150 });
     h.lc.trigger('lc-pointerdrag', { x: 160, y: 150 });
+    window.dispatchEvent(new KeyboardEvent('keyup', { key: 'Shift' }));
     h.lc.trigger('lc-pointerup', { x: 160, y: 150 });
     expect(h.lc.shapes.map((shape) => (shape as Shape)['className'])).toEqual(['Image', 'Image']);
     h.actions[0].undo();
@@ -746,6 +814,69 @@ describe('selection interactions', () => {
     expect(a['className']).toBe('Rectangle');
     h.actions[0].do();
     expect(h.lc.shapes.map((shape) => (shape as Shape)['className'])).toEqual(['Image', 'Image']);
+  });
+
+  it.each([
+    { count: 1, horizontal: true },
+    { count: 2, horizontal: true },
+    { count: 1, horizontal: false },
+    { count: 2, horizontal: false },
+  ])('anchors thick-stroke stretch bounds exactly: %j', ({ count, horizontal }) => {
+    const h = setup();
+    const shapes = Array.from({ length: count }, () =>
+      Object.assign(h.rectangle(), { strokeWidth: 20 })
+    );
+    h.lc.shapes.push(...shapes);
+    h.activate(h.objectTool);
+    h.objectTool.selectShapes(shapes);
+    const begin = horizontal ? { x: 210, y: 150 } : { x: 150, y: 210 };
+    const end = horizontal ? { x: 330, y: 150 } : { x: 150, y: 330 };
+    h.lc.trigger('lc-pointerdown', begin);
+    h.lc.trigger('lc-pointerup', end);
+    const expected = {
+      x: 90,
+      y: 90,
+      width: horizontal ? 240 : 120,
+      height: horizontal ? 120 : 240,
+    };
+    expect(getSelectionBounds(shapes)).toEqual(expected);
+    expect(shapes.map((shape) => shape['className'])).toEqual(Array(count).fill('Image'));
+    h.actions[0].undo();
+    expect(getSelectionBounds(shapes)).toEqual({ x: 90, y: 90, width: 120, height: 120 });
+    expect(shapes.map((shape) => shape['className'])).toEqual(Array(count).fill('Rectangle'));
+    h.actions[0].do();
+    expect(getSelectionBounds(shapes)).toEqual(expected);
+  });
+
+  it('includes later legacy masks when copying or moving selected artwork', () => {
+    const h = setup();
+    const artwork = h.rectangle();
+    const mask = {
+      className: 'ErasedLinePath',
+      getBoundingRect: () => ({ x: 0, y: 0, width: 1, height: 1 }),
+    };
+    const laterArtwork = Object.assign(h.rectangle(), { x: 400, y: 400 });
+    h.lc.shapes.push(artwork, mask, laterArtwork);
+    h.activate(h.objectTool);
+    h.objectTool.selectShapes([artwork]);
+    expect(h.objectTool.getCopyShapes()[0]['className']).toBe('Image');
+    expect(h.api.renderSnapshotToImage).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        shapes: [h.api.shapeToJSON(artwork), h.api.shapeToJSON(mask)],
+      }),
+      expect.anything()
+    );
+    h.lc.trigger('lc-pointerdown', { x: 130, y: 140 });
+    h.lc.trigger('lc-pointerup', { x: 150, y: 140 });
+    expect(h.lc.shapes[0]).toMatchObject({ className: 'Image' });
+    expect(getShapeBounds(h.objectTool.getSelectedShapes()[0])?.x).toBe(119);
+    expect(h.lc.shapes).not.toContain(mask);
+    expect(laterArtwork['className']).toBe('Rectangle');
+    h.actions[0].undo();
+    expect(artwork['className']).toBe('Rectangle');
+    expect(h.lc.shapes).toEqual([artwork, mask, laterArtwork]);
+    h.actions[0].do();
+    expect(h.lc.shapes).not.toContain(mask);
   });
 
   it('transforms future shapes through their renderer and restores their original prototype on undo', () => {

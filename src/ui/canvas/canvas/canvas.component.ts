@@ -35,7 +35,7 @@ import { ImprovedSelectShape } from '../tools/improved-select';
 import { registerImprovedSelectShapes } from '../tools/improved-select/register-shapes';
 import {
   readSelectionClipboard,
-  rememberCopiedImage,
+  writeCopiedImage,
   setCopiedShapes,
 } from '../tools/improved-select/selection-clipboard';
 import { getSelectionBounds } from '../tools/improved-select/geometry';
@@ -310,7 +310,7 @@ export class CanvasComponent implements AfterViewInit, OnDestroy {
     if (!selection.length) return;
 
     const serialized = selection.map((shape) => LC.shapeToJSON(shape));
-    setCopiedShapes(serialized);
+    const generation = setCopiedShapes(serialized);
 
     const bounds = getSelectionBounds(selection);
 
@@ -338,12 +338,7 @@ export class CanvasComponent implements AfterViewInit, OnDestroy {
       console.error('Unable to render selected objects for the system clipboard.');
       return;
     }
-    try {
-      await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
-      rememberCopiedImage(serialized, blob);
-    } catch (error) {
-      console.warn('Unable to copy the selection to the system image clipboard.', error);
-    }
+    await writeCopiedImage(generation, blob);
   }
 
   public async pasteSelection(): Promise<void> {

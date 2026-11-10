@@ -33,14 +33,21 @@ export function prepareTransform(
   operation: 'move' | 'transform' | 'stretch'
 ): void {
   const rotatedStretch = operation === 'stretch' && !!shape['rotation'];
-  if (nativeShapes.has(shape['className'] as string) && !rotatedStretch) return;
+  const strokedStretch =
+    operation === 'stretch' &&
+    shape['className'] !== 'Image' &&
+    (['LinePath', 'ErasedLinePath', 'Point', 'Polygon'].includes(shape['className'] as string) ||
+      ['strokeWidth', 'pointSize', 'size'].some(
+        (key) => typeof shape[key] === 'number' && shape[key] > 0
+      ));
+  if (nativeShapes.has(shape['className'] as string) && !rotatedStretch && !strokedStretch)
+    return;
   if (
     operation === 'move' &&
     (typeof shape['move'] === 'function' || typeof shape['setUpperLeft'] === 'function')
   )
     return;
-  // Unknown renderers and rotated anisotropic stretches use an undoable image conversion,
-  // rather than guessing at custom serialized fields or silently applying the wrong transform.
+  // Rasterize shapes that cannot represent the transform natively.
   const bounds = getShapeBounds(shape);
   if (!bounds) throw new Error(`Shape ${String(shape['className'])} has no selection bounds.`);
   const image = imageShape(renderShape(shape, bounds), bounds);

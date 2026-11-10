@@ -68,6 +68,39 @@ describe('selection command history', () => {
     return { harness, history, shape, lc, record, setCanvasData, store };
   }
 
+  it('does not let an older toBlob completion overwrite a newer copy', async () => {
+    const callbacks: BlobCallback[] = [];
+    vi.stubGlobal('navigator', { clipboard: { write: vi.fn().mockResolvedValue(undefined) } });
+    vi.stubGlobal(
+      'ClipboardItem',
+      class {
+        constructor(public data: Record<string, Blob>) {}
+      }
+    );
+    vi.stubGlobal('LC', {
+      shapeToJSON: (shape: unknown) => shape,
+      renderSnapshotToImage: () => ({
+        toBlob: (callback: BlobCallback) => callbacks.push(callback),
+      }),
+    });
+    const shape = { getBoundingRect: () => ({ x: 0, y: 0, width: 10, height: 10 }) };
+    const harness = {
+      lc: { getSnapshot: () => ({}) },
+      getActiveSelectionTool: () => ({ getCopyShapes: () => [shape] }),
+    };
+    const older = Reflect.apply(CanvasComponent.prototype.copySelection, harness, []);
+    const newer = Reflect.apply(CanvasComponent.prototype.copySelection, harness, []);
+    const newImage = new Blob(['new'], { type: 'image/png' });
+    callbacks[1](newImage);
+    await newer;
+    callbacks[0](new Blob(['old'], { type: 'image/png' }));
+    await older;
+    expect(navigator.clipboard.write).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(navigator.clipboard.write).mock.calls[0][0]).toMatchObject([
+      { data: { 'image/png': newImage } },
+    ]);
+  });
+
   it('records an entire multi-object paste with a fresh cross-board undo snapshot', async () => {
     const { harness, history, shape, lc, record, setCanvasData, store } = setup();
     history.markStrokeStart(lc);

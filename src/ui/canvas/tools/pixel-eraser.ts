@@ -6,7 +6,7 @@ import {
   SelectionAction,
   type SelectionSnapshot,
 } from './improved-select/selection-action';
-import { connectedImages, imageShape } from './improved-select/selection-raster';
+import { bakeLegacyMasks, connectedImages, imageShape } from './improved-select/selection-raster';
 import { getSelection, getSelectionRegion } from './improved-select/selection-state';
 import { renderShape } from './improved-select/shape-hit-testing';
 
@@ -27,6 +27,7 @@ export class PixelEraser implements LCTool {
   private before: SelectionSnapshot | null = null;
   private previous: EraserPoint | null = null;
   private readonly rasters = new Map<unknown, EraserRaster>();
+  private baked: ReturnType<typeof bakeLegacyMasks> | null = null;
 
   constructor(private readonly lc: LCInstance) {}
 
@@ -65,6 +66,7 @@ export class PixelEraser implements LCTool {
     for (const original of this.before.shapes) {
       if (!original || typeof original !== 'object') continue;
       const shape = original as Shape;
+      if (shape['className'] === 'ErasedLinePath') continue;
       const bounds = this.rasters.get(original)?.bounds ?? getShapeBounds(shape);
       if (
         !bounds ||
@@ -86,18 +88,27 @@ export class PixelEraser implements LCTool {
           width: Math.ceil(bounds.x + bounds.width) - Math.floor(bounds.x),
           height: Math.ceil(bounds.y + bounds.height) - Math.floor(bounds.y),
         };
-        raster = { bounds: aligned, canvas: renderShape(shape, aligned), preview: null };
+        raster = {
+          bounds: aligned,
+          canvas: renderShape(shape, aligned, this.before.shapes),
+          preview: null,
+        };
         this.rasters.set(original, raster);
       }
       if (!eraseRaster(raster.canvas, raster.bounds, start, end, this.strokeWidth)) continue;
-      raster.preview ??= imageShape(raster.canvas, raster.bounds);
+      raster.preview ??= imageShape(raster.canvas, raster.bounds, true);
       changed = true;
     }
     if (changed) {
+      const baked = (this.baked ??= bakeLegacyMasks(this.before.shapes));
       this.lc.shapes.splice(
         0,
         this.lc.shapes.length,
-        ...this.before.shapes.map((shape) => this.rasters.get(shape)?.preview ?? shape)
+        ...this.before.shapes.flatMap((original) => {
+          const shape = original as Shape;
+          if (shape['className'] === 'ErasedLinePath') return [];
+          return [this.rasters.get(shape)?.preview ?? baked.replacements.get(shape) ?? shape];
+        })
       );
       this.lc.repaintLayer('main');
     }
@@ -109,8 +120,11 @@ export class PixelEraser implements LCTool {
     const changed = [...this.rasters.values()].some((raster) => raster.preview);
     if (changed) {
       const shapes = before.shapes.flatMap((shape) => {
+        if ((shape as Shape)['className'] === 'ErasedLinePath') return [];
         const raster = this.rasters.get(shape);
-        return raster?.preview ? connectedImages(raster.canvas, raster.bounds) : [shape];
+        return raster?.preview
+          ? connectedImages(raster.canvas, raster.bounds)
+          : [this.baked?.replacements.get(shape as Shape) ?? shape];
       });
       this.lc.shapes.splice(0, this.lc.shapes.length, ...shapes);
       this.lc.execute(new SelectionAction(this.lc, before, captureSelection(this.lc, [], null)));
@@ -118,6 +132,7 @@ export class PixelEraser implements LCTool {
     this.before = null;
     this.previous = null;
     this.rasters.clear();
+    this.baked = null;
     if (changed) this.lc.trigger('drawingChange', {});
   }
 }

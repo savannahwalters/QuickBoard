@@ -10,11 +10,23 @@ interface Raster {
   contentBounds?: SelectionBounds;
 }
 
-export function renderShape(shape: Shape, bounds: SelectionBounds): HTMLCanvasElement {
+export function legacyMasks(shape: Shape, scene: readonly unknown[]): Shape[] {
+  const index = scene.indexOf(shape);
+  if (index < 0) return [];
+  return (scene.slice(index + 1) as Shape[]).filter(
+    (item) => item['className'] === 'ErasedLinePath'
+  );
+}
+
+export function renderShape(
+  shape: Shape,
+  bounds: SelectionBounds,
+  scene: readonly unknown[] = []
+): HTMLCanvasElement {
   if (!LC.renderSnapshotToImage) throw new Error('LiterallyCanvas image rendering is unavailable.');
   const canvas = LC.renderSnapshotToImage(
     {
-      shapes: [LC.shapeToJSON(shape)],
+      shapes: [shape, ...legacyMasks(shape, scene)].map((item) => LC.shapeToJSON(item)),
       backgroundShapes: [],
       colors: { background: 'transparent' },
       imageSize: { width: 'infinite', height: 'infinite' },
@@ -29,18 +41,21 @@ export function renderShape(shape: Shape, bounds: SelectionBounds): HTMLCanvasEl
 export class ShapeHitTesting {
   private cache = new WeakMap<Shape, Raster>();
 
+  constructor(private readonly scene: () => readonly unknown[] = () => []) {}
+
   clear(): void {
     this.cache = new WeakMap();
   }
 
   private raster(shape: Shape): Raster | null {
+    if (shape['className'] === 'ErasedLinePath') return null;
     const image = shape['image'];
     if (image instanceof HTMLImageElement && (!image.complete || !image.naturalWidth)) return null;
     const cached = this.cache.get(shape);
     if (cached) return cached;
     const bounds = getShapeBounds(shape);
     if (!bounds || bounds.width <= 0 || bounds.height <= 0) return null;
-    const canvas = renderShape(shape, bounds);
+    const canvas = renderShape(shape, bounds, this.scene());
     const context = canvas.getContext('2d', { willReadFrequently: true });
     if (!context) throw new Error('Could not inspect a shape for selection.');
     const raster = {
@@ -117,6 +132,15 @@ export class ShapeHitTesting {
     mode: SelectionMode,
     path: readonly { x: number; y: number }[]
   ): boolean {
+    const shapeBounds = getShapeBounds(shape);
+    if (
+      !shapeBounds ||
+      shapeBounds.x >= Math.max(start.x, end.x) ||
+      shapeBounds.y >= Math.max(start.y, end.y) ||
+      shapeBounds.x + shapeBounds.width <= Math.min(start.x, end.x) ||
+      shapeBounds.y + shapeBounds.height <= Math.min(start.y, end.y)
+    )
+      return false;
     const raster = this.raster(shape);
     if (!raster) return false;
     const { bounds, width, height, pixels } = raster;

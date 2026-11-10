@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   createPastedShapes,
   setCopiedShapes,
-  rememberCopiedImage,
+  writeCopiedImage,
   readSelectionClipboard,
 } from './selection-clipboard';
 
@@ -79,6 +79,7 @@ describe('selection clipboard', () => {
     vi.stubGlobal('navigator', {
       clipboard: {
         read: vi.fn().mockResolvedValue([{ types: [image.type], getType: async () => image }]),
+        write: vi.fn().mockResolvedValue(undefined),
       },
     });
     const shape = { className: 'Rectangle', data: { x: 10, y: 20 } };
@@ -87,21 +88,26 @@ describe('selection clipboard', () => {
       JSONToShape: (snapshot: typeof shape) => structuredClone(snapshot),
       shapeToJSON: (shape: unknown) => shape,
     });
-    setCopiedShapes(serialized);
-    return serialized;
+    vi.stubGlobal(
+      'ClipboardItem',
+      class {
+        constructor(public data: Record<string, Blob>) {}
+      }
+    );
+    return setCopiedShapes(serialized);
   }
 
   it('prefers native shapes only when the system image matches the latest internal copy', async () => {
     const image = clipboardImage([1, 2, 3]);
     const copied = setupClipboard(clipboardImage([1, 2, 3]));
-    rememberCopiedImage(copied, image);
+    await writeCopiedImage(copied, image);
     expect(await readSelectionClipboard()).toHaveProperty('shapes');
   });
 
   it('pastes newer external images instead of stale internal shapes, even with equal byte lengths', async () => {
     const external = clipboardImage([3, 2, 1]);
     const copied = setupClipboard(external);
-    rememberCopiedImage(copied, clipboardImage([1, 2, 3]));
+    await writeCopiedImage(copied, clipboardImage([1, 2, 3]));
     expect(await readSelectionClipboard()).toEqual({ image: external });
   });
 
@@ -133,7 +139,47 @@ describe('selection clipboard', () => {
     const image = clipboardImage([1]);
     const older = setupClipboard(image);
     setCopiedShapes([{ className: 'Rectangle', data: { x: 20, y: 30 } }]);
-    rememberCopiedImage(older, image);
+    await writeCopiedImage(older, image);
     expect(await readSelectionClipboard()).toEqual({ image });
+    expect(navigator.clipboard.write).not.toHaveBeenCalled();
+  });
+
+  it('does not write an older copy whose encoding finishes after the latest copy', async () => {
+    const image = clipboardImage([1]);
+    const older = setupClipboard(image);
+    const newer = setCopiedShapes([]);
+    await writeCopiedImage(newer, image);
+    await writeCopiedImage(older, clipboardImage([2]));
+    expect(navigator.clipboard.write).toHaveBeenCalledTimes(1);
+  });
+
+  it('serializes in-flight writes so a newer copy always finishes last', async () => {
+    const older = setupClipboard(clipboardImage([1]));
+    let complete!: () => void;
+    const pending = new Promise<void>((resolve) => {
+      complete = resolve;
+    });
+    vi.mocked(navigator.clipboard.write).mockReturnValueOnce(pending);
+    const first = writeCopiedImage(older, clipboardImage([1]));
+    await Promise.resolve();
+    expect(navigator.clipboard.write).toHaveBeenCalledTimes(1);
+    const newer = setCopiedShapes([]);
+    const second = writeCopiedImage(newer, clipboardImage([2]));
+    await Promise.resolve();
+    expect(navigator.clipboard.write).toHaveBeenCalledTimes(1);
+    complete();
+    await Promise.all([first, second]);
+    expect(navigator.clipboard.write).toHaveBeenCalledTimes(2);
+  });
+
+  it('continues processing the latest copy after an earlier clipboard write fails', async () => {
+    const first = setupClipboard(clipboardImage([1]));
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    vi.mocked(navigator.clipboard.write).mockRejectedValueOnce(new Error('Denied'));
+    await writeCopiedImage(first, clipboardImage([1]));
+    const newer = setCopiedShapes([]);
+    await writeCopiedImage(newer, clipboardImage([2]));
+    expect(navigator.clipboard.write).toHaveBeenCalledTimes(2);
+    expect(console.warn).toHaveBeenCalledOnce();
   });
 });

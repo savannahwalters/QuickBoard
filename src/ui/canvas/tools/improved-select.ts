@@ -7,8 +7,8 @@ import {
 } from './improved-select/geometry';
 import { hitSelectionHandle, type GroupHandle } from './improved-select/selection-handles';
 import { pointInSelection, type SelectionMode } from './improved-select/selection-geometry';
-import { ShapeHitTesting } from './improved-select/shape-hit-testing';
-import { regionPieces } from './improved-select/selection-raster';
+import { legacyMasks, renderShape, ShapeHitTesting } from './improved-select/shape-hit-testing';
+import { bakeLegacyMasks, imageShape, regionPieces } from './improved-select/selection-raster';
 import {
   captureSelection,
   SelectionAction,
@@ -39,11 +39,12 @@ interface Point {
 interface Gesture {
   mode: 'move' | GroupHandle;
   start: Point;
+  point: Point;
   bounds: SelectionBounds;
   before: SelectionSnapshot;
   states: ShapeSnapshots;
   crop: boolean;
-  stretch: boolean;
+  stretchStates: ShapeSnapshots | null;
   changed: boolean;
   prepared: boolean;
   scene: unknown[] | null;
@@ -52,6 +53,7 @@ interface Gesture {
 /**
  * All selectors share renderer-based picking, screen-sized handles, and snapshot undo.
  * Middle handles stretch; Shift-middle handles crop the selected group as one region.
+ * Corner handles scale uniformly unless Shift is currently held.
  * New shape types participate through LC bounds/serialization/rendering; transforms
  * without a native geometry adapter use an undoable raster conversion.
  */
@@ -59,7 +61,7 @@ export class ImprovedSelectShape implements LCTool {
   name = 'SelectShape';
   iconName = 'select';
   usesSimpleAPI = false;
-  private readonly hits = new ShapeHitTesting();
+  private readonly hits = new ShapeHitTesting(() => this.lc.shapes);
   private unsubscribers: (() => void)[] = [];
   private selected: Shape[] = [];
   private shift = false;
@@ -107,6 +109,8 @@ export class ImprovedSelectShape implements LCTool {
       if (this.marquee && this.hasAspectConstraint()) {
         this.updateSelectionEnd(this.rawSelectionEnd);
         this.overlay();
+      } else if (this.gesture && this.isCorner(this.gesture.mode)) {
+        this.drag(this.gesture.point);
       }
     };
     const key = (event: KeyboardEvent) => updateShift(event.shiftKey);
@@ -160,7 +164,15 @@ export class ImprovedSelectShape implements LCTool {
 
   getCopyShapes(): readonly Shape[] {
     const region = getSelectionRegion(this.lc);
-    return region ? region.shapes.flatMap((shape) => regionPieces(shape, region)) : this.selected;
+    if (region) {
+      return region.shapes.flatMap((shape) => regionPieces(shape, region, true, this.lc.shapes));
+    }
+    return this.selected.map((shape) => {
+      if (!legacyMasks(shape, this.lc.shapes).length) return shape;
+      const bounds = getShapeBounds(shape);
+      if (!bounds) throw new Error('Cannot copy masked artwork without bounds.');
+      return imageShape(renderShape(shape, bounds, this.lc.shapes), bounds);
+    });
   }
 
   deleteSelectedShapes(beforeDelete?: () => void): boolean {
@@ -168,18 +180,18 @@ export class ImprovedSelectShape implements LCTool {
     const selected = this.selected.filter((shape) => this.lc.shapes.includes(shape));
     if (!selected.length) return false;
     beforeDelete?.();
-    const region = getSelectionRegion(this.lc);
+    let region = getSelectionRegion(this.lc);
     const before = captureSelection(this.lc, selected, region);
-    const removed = new Set(selected);
+    if (region) {
+      this.bakeLegacyArtwork();
+      region = getSelectionRegion(this.lc);
+    }
+    const removed = new Set(this.selected);
     const remaining = (this.lc.shapes as Shape[]).flatMap((shape) => {
       if (!removed.has(shape)) return [shape];
-      return region ? regionPieces(shape, region, false) : [];
+      return region ? regionPieces(shape, region, false, this.lc.shapes) : [];
     });
-    this.lc.shapes.splice(
-      0,
-      this.lc.shapes.length,
-      ...remaining
-    );
+    this.lc.shapes.splice(0, this.lc.shapes.length, ...remaining);
     setSelectionRegion(this.lc, null);
     this.setSelected([]);
     this.lc.execute(new SelectionAction(this.lc, before, captureSelection(this.lc, [], null)));
@@ -223,7 +235,7 @@ export class ImprovedSelectShape implements LCTool {
       });
     let shapes = this.previews.get(region);
     if (!shapes) {
-      shapes = region.shapes.flatMap((shape) => regionPieces(shape, region));
+      shapes = region.shapes.flatMap((shape) => regionPieces(shape, region, true, this.lc.shapes));
       this.previews.set(region, shapes);
     }
     return shapes;
@@ -304,11 +316,12 @@ export class ImprovedSelectShape implements LCTool {
     this.gesture = {
       mode,
       start: { ...point },
+      point: { ...point },
       bounds: getSelectionBounds(this.transformShapes()),
       before: captureSelection(this.lc, this.selected, getSelectionRegion(this.lc)),
       states: new Map(),
       crop: this.shift && ['group-t', 'group-b', 'group-l', 'group-r'].includes(mode),
-      stretch: this.shift || ['group-t', 'group-b', 'group-l', 'group-r'].includes(mode),
+      stretchStates: null,
       changed: false,
       prepared: false,
       scene: null,
@@ -318,6 +331,7 @@ export class ImprovedSelectShape implements LCTool {
 
   private prepare(gesture: Gesture): void {
     if (gesture.prepared) return;
+    this.bakeLegacyArtwork();
     gesture.prepared = true;
     const region = getSelectionRegion(this.lc);
     if (region) {
@@ -325,10 +339,10 @@ export class ImprovedSelectShape implements LCTool {
       const sources = new Set(region.shapes);
       const next = (this.lc.shapes as Shape[]).flatMap((shape) => {
         if (!sources.has(shape)) return [shape];
-        const selected = regionPieces(shape, region);
+        const selected = regionPieces(shape, region, true, this.lc.shapes);
         if (!selected.length) return [shape];
         fragments.push(...selected);
-        return [...regionPieces(shape, region, false), ...selected];
+        return [...regionPieces(shape, region, false, this.lc.shapes), ...selected];
       });
       this.lc.shapes.splice(0, this.lc.shapes.length, ...next);
       setSelectionRegion(this.lc, null);
@@ -340,13 +354,28 @@ export class ImprovedSelectShape implements LCTool {
           shape,
           gesture.mode === 'move'
             ? 'move'
-            : gesture.mode !== 'group-rotate' && gesture.stretch
+            : ['group-t', 'group-b', 'group-l', 'group-r'].includes(gesture.mode)
             ? 'stretch'
             : 'transform'
         );
     }
     gesture.states = snapshotShapes(this.selected);
     setSelection(this.lc, this.selected);
+  }
+
+  private bakeLegacyArtwork(): void {
+    const { shapes, replacements } = bakeLegacyMasks(this.lc.shapes);
+    this.lc.shapes.splice(0, this.lc.shapes.length, ...shapes);
+    this.selected = this.selected.map((shape) => replacements.get(shape) ?? shape);
+    const region = getSelectionRegion(this.lc);
+    if (region) {
+      setSelectionRegion(this.lc, {
+        ...region,
+        shapes: region.shapes.map((shape) => replacements.get(shape) ?? shape),
+      });
+    }
+    setSelection(this.lc, this.selected);
+    this.hits.clear();
   }
 
   private drag(point: Point): void {
@@ -358,6 +387,7 @@ export class ImprovedSelectShape implements LCTool {
       return;
     }
     const gesture = this.gesture;
+    if (gesture) gesture.point = { ...point };
     if (
       !gesture ||
       (point.x === gesture.start.x && point.y === gesture.start.y && !gesture.changed)
@@ -389,11 +419,27 @@ export class ImprovedSelectShape implements LCTool {
       const anchor = { x: left ? x + width : x, y: top ? y + height : y };
       let sx = vertical ? 1 : Math.max(0.01, ((point.x - anchor.x) * (left ? -1 : 1)) / width);
       let sy = horizontal ? 1 : Math.max(0.01, ((point.y - anchor.y) * (top ? -1 : 1)) / height);
-      if (!horizontal && !vertical && !gesture.stretch) sx = sy = Math.max(sx, sy);
-      resizeShapes(gesture.states, anchor, sx, sy);
+      let states = gesture.states;
+      if (!horizontal && !vertical) {
+        if (this.shift) {
+          if (!gesture.stretchStates) {
+            restoreShapes(gesture.states);
+            for (const shape of this.selected) prepareTransform(shape, 'stretch');
+            gesture.stretchStates = snapshotShapes(this.selected);
+          }
+          states = gesture.stretchStates;
+        } else {
+          sx = sy = Math.max(sx, sy);
+        }
+      }
+      resizeShapes(states, anchor, sx, sy);
     }
     this.hits.clear();
     this.overlay();
+  }
+
+  private isCorner(mode: Gesture['mode']): boolean {
+    return ['group-tl', 'group-tr', 'group-bl', 'group-br'].includes(mode);
   }
 
   private crop(gesture: Gesture, point: Point): void {
@@ -422,7 +468,7 @@ export class ImprovedSelectShape implements LCTool {
     const next = scene.flatMap((item) => {
       const shape = item as Shape;
       if (!sources.has(shape)) return [shape];
-      const fragments = regionPieces(shape, region);
+      const fragments = regionPieces(shape, region, true, scene);
       selected.push(...fragments);
       return fragments;
     });
