@@ -1,8 +1,48 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { resizeShapes, rotateShapes } from './resize-action';
+import { resizeShapes, rotateShapes, translateShapes } from './shape-transforms';
 
 describe('vector selection resizing', () => {
   afterEach(() => vi.unstubAllGlobals());
+
+  it('moves both stroke point sets and images together without using inconsistent LC move methods', () => {
+    vi.stubGlobal('LC', { JSONToShape: (snapshot: Record<string, unknown>) => snapshot['data'] });
+    const stroke = {},
+      image = {};
+    const states = new Map<Record<string, unknown>, Record<string, unknown>>([
+      [
+        stroke,
+        {
+          className: 'LinePath',
+          data: {
+            pointCoordinatePairs: [
+              [10, 20],
+              [30, 40],
+            ],
+            smoothedPointCoordinatePairs: [
+              [10, 20],
+              [30, 40],
+            ],
+            smooth: false,
+          },
+        },
+      ],
+      [image, { className: 'Image', data: { x: 5, y: 7 } }],
+    ]);
+    translateShapes(states, 50, 60);
+    expect(stroke).toMatchObject({
+      pointCoordinatePairs: [
+        [60, 80],
+        [80, 100],
+      ],
+      smoothedPointCoordinatePairs: [
+        [60, 80],
+        [80, 100],
+      ],
+    });
+    expect(image).toEqual({ x: 55, y: 67 });
+    translateShapes(states, 1, 2);
+    expect(image).toEqual({ x: 6, y: 9 });
+  });
 
   it('rotates pencil control points and smoothed points without rasterizing them', () => {
     const shape = {};

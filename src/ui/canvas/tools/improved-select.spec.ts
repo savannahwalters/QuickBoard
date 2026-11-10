@@ -98,7 +98,12 @@ describe('selection interactions', () => {
           ? Reflect.apply(fromJSON, null, [snapshot.data])
           : api.createShape(snapshot.className, snapshot.data);
       },
-      renderSnapshotToImage: vi.fn(() => document.createElement('canvas')),
+      renderSnapshotToImage: vi.fn((_snapshot, options) => {
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.ceil(options.rect.width);
+        canvas.height = Math.ceil(options.rect.height);
+        return canvas;
+      }),
     };
     vi.stubGlobal('LC', api);
     registerImprovedSelectShapes(api);
@@ -192,8 +197,8 @@ describe('selection interactions', () => {
     const h = setup();
     const shape = h.rectangle(width, height);
     h.lc.shapes.push(shape);
-    const x = width < 0 ? 50 : 150;
-    const y = height < 0 ? 50 : 150;
+    const x = width < 0 ? 29 : 129;
+    const y = height < 0 ? 44 : 144;
     h.regionTool('rectangle');
     h.lc.trigger('lc-pointerdown', { x: x - 15, y: y - 15 });
     h.lc.trigger('lc-pointerdrag', { x: x + 15, y: y + 15 });
@@ -209,7 +214,7 @@ describe('selection interactions', () => {
       expect.objectContaining({ rect: getShapeBounds(shape) })
     );
     expect(h.lc.shapes).toHaveLength(2);
-    expect(h.overlays().map((overlay) => overlay['className'])).toEqual(['ImageSelectionOverlay']);
+    expect(h.overlays().map((overlay) => overlay['className'])).toEqual(['SelectionGroupOverlay']);
     const fragment = h.objectTool.getSelectedShapes()[0] as Shape;
     expect(fragment.getBoundingRect()).toEqual({
       x: (width < 0 ? -1 : 99) + 30,
@@ -405,8 +410,8 @@ describe('selection interactions', () => {
       stroke: vi.fn(),
     };
     h.renderers.get('SelectionGroupOverlay')!(ctx, { shapes: [h.rectangle()] });
-    expect(ctx.arc).toHaveBeenCalledTimes(5);
-    expect(ctx.fill).toHaveBeenCalledTimes(5);
+    expect(ctx.arc).toHaveBeenCalledTimes(9);
+    expect(ctx.fill).toHaveBeenCalledTimes(9);
   });
 
   it.each([1, 2])('rotates %s selected vector objects and supports undo/redo', (count) => {
@@ -424,5 +429,84 @@ describe('selection interactions', () => {
     expect(getSelectionBounds(shapes).width).toBeCloseTo(102);
     h.actions[0].do();
     expect(getSelectionBounds(shapes).width).toBeCloseTo(52);
+  });
+
+  it('adds and removes images and strokes with Shift instead of consuming clicks as image movement', () => {
+    const h = setup();
+    const stroke = h.rectangle();
+    const image = document.createElement('canvas');
+    image.width = image.height = 102;
+    const fill = h.api.createShape('Image', { x: 300, y: 99, image });
+    h.lc.shapes.push(stroke, fill);
+    h.activate(h.objectTool);
+    h.click(329, 144);
+    expect(h.objectTool.getSelectedShapes()).toEqual([fill]);
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Shift', shiftKey: true }));
+    h.click(129, 144);
+    expect(h.objectTool.getSelectedShapes()).toEqual([fill, stroke]);
+    h.click(329, 144);
+    expect(h.objectTool.getSelectedShapes()).toEqual([stroke]);
+  });
+
+  it('squashes only one axis with an edge midpoint and undoes the entire gesture', () => {
+    const h = setup();
+    const original = h.rectangle();
+    h.lc.shapes.push(original);
+    h.activate(h.objectTool);
+    h.objectTool.selectShapes([original], h.lc);
+    h.lc.trigger('lc-pointerdown', { x: 201, y: 150 });
+    h.lc.trigger('lc-pointerdrag', { x: 303, y: 150 });
+    h.lc.trigger('lc-pointerup', { x: 303, y: 150 });
+    expect(original['width']).toBe(200);
+    expect(original['height']).toBe(100);
+    h.actions[0].undo();
+    expect(original['width']).toBe(100);
+    h.actions[0].do();
+    expect(original['width']).toBe(200);
+  });
+
+  it('crops a mixed group with Shift-edge drag and restores vectors and order on undo', () => {
+    const h = setup();
+    const a = h.rectangle(),
+      b = h.rectangle();
+    h.lc.shapes.push(a, b);
+    h.activate(h.objectTool);
+    h.objectTool.selectShapes([a, b], h.lc);
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Shift', shiftKey: true }));
+    h.lc.trigger('lc-pointerdown', { x: 201, y: 150 });
+    h.lc.trigger('lc-pointerdrag', { x: 160, y: 150 });
+    h.lc.trigger('lc-pointerup', { x: 160, y: 150 });
+    expect(h.lc.shapes.map((shape) => (shape as Shape)['className'])).toEqual(['Image', 'Image']);
+    h.actions[0].undo();
+    h.lc.trigger('drawingChange', {});
+    expect(h.lc.shapes).toEqual([a, b]);
+    expect(a['className']).toBe('Rectangle');
+    h.actions[0].do();
+    expect(h.lc.shapes.map((shape) => (shape as Shape)['className'])).toEqual(['Image', 'Image']);
+  });
+
+  it('transforms future shapes through their renderer and restores their original prototype on undo', () => {
+    const h = setup();
+    h.api.defineShape('FutureShape', {
+      constructor(this: Shape, data: Record<string, unknown>) {
+        Object.assign(this, data);
+      },
+      getBoundingRect(this: Shape) {
+        return { x: this['x'], y: this['y'], width: this['width'], height: this['height'] };
+      },
+    } as Definition);
+    const future = h.api.createShape('FutureShape', { x: 100, y: 100, width: 100, height: 100 });
+    const prototype = Object.getPrototypeOf(future);
+    h.lc.shapes.push(future);
+    h.activate(h.objectTool);
+    h.objectTool.selectShapes([future], h.lc);
+    h.lc.trigger('lc-pointerdown', { x: 200, y: 200 });
+    h.lc.trigger('lc-pointerdrag', { x: 300, y: 300 });
+    h.lc.trigger('lc-pointerup', { x: 300, y: 300 });
+    expect(future['className']).toBe('Image');
+    h.actions[0].undo();
+    expect(future['className']).toBe('FutureShape');
+    expect(Object.getPrototypeOf(future)).toBe(prototype);
+    expect(future.getBoundingRect()).toEqual({ x: 100, y: 100, width: 100, height: 100 });
   });
 });

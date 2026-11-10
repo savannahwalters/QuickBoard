@@ -2,20 +2,6 @@
 
 QuickBoard is a simple and intuitive app for storyboarding.
 
-## Canvas selections
-
-- Object Select selects and moves whole objects. Shift-click adds or removes objects;
-  drag on empty space to select a group. Corner handles resize the selection, preserving
-  proportions unless Shift is held.
-  The grabber above the selection rotates strokes and groups around their shared center.
-- Rectangle, circle, and lasso selectors finish on release. Polygon Select adds a vertex
-  per click and finishes only when you click near the first vertex after placing at least
-  three vertices. Region outlines are replaced by transform handles around the selected
-  content when the tool returns to Object Select.
-- Drag inside a completed region to move its contents. The first drag splits affected
-  objects into separately cropped connected pieces on the same canvas layer; untouched objects remain
-  editable vectors. Splitting, moving, and resizing support undo and redo.
-
 ## Getting Started: Installer
 
 Install the [most recent version from the releases page](https://github.com/savannahwalters/QuickBoard/releases/latest/). 

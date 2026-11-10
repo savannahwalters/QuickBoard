@@ -1,6 +1,6 @@
-import { resolveAccentBorderColor, resolveAccentColor } from './cursors';
 import { getSelectionBounds } from './geometry';
 import { registerRotatableShapes } from './rotatable-shapes';
+import { drawSelectionBox } from './selection-handles';
 
 export function registerImprovedSelectShapes(LC: Record<string, unknown>): void {
   if (
@@ -163,93 +163,10 @@ export function registerImprovedSelectShapes(LC: Record<string, unknown>): void 
     }
   );
 
-  LC['defineShape']('ImageSelectionOverlay', {
-    constructor: function (
-      this: { shape: unknown; overrideBg: string },
-      args: { shape: unknown; overrideBg: string }
-    ) {
-      this.shape = args.shape;
-      this.overrideBg = args.overrideBg;
-    },
-    getBoundingRect: function (this: {
-      shape: { getBoundingRect: () => { x: number; y: number; width: number; height: number } };
-    }) {
-      return this.shape.getBoundingRect();
-    },
-  });
-
-  LC['defineCanvasRenderer'](
-    'ImageSelectionOverlay',
-    function (ctx: CanvasRenderingContext2D, overlayShape: Record<string, unknown>) {
-      const shape = overlayShape['shape'] as Record<string, unknown>;
-      if (!shape || shape['className'] !== 'Image' || !shape['image']) return;
-
-      const w =
-        ((shape['cropWidth'] as number) || (shape['image'] as HTMLImageElement).width) *
-        (shape['scale'] as number) *
-        ((shape['scaleX'] as number) || 1);
-      const h =
-        ((shape['cropHeight'] as number) || (shape['image'] as HTMLImageElement).height) *
-        (shape['scale'] as number) *
-        ((shape['scaleY'] as number) || 1);
-
-      ctx.save();
-      ctx.translate((shape['x'] as number) + w / 2, (shape['y'] as number) + h / 2);
-      if (shape['rotation']) ctx.rotate(shape['rotation'] as number);
-
-      if (overlayShape['overrideBg']) {
-        ctx.fillStyle = overlayShape['overrideBg'] as string;
-        ctx.fillRect(-w / 2, -h / 2, w, h);
-      } else {
-        const accent = resolveAccentColor();
-        const accentBorder = resolveAccentBorderColor();
-
-        ctx.strokeStyle = accentBorder;
-        ctx.lineWidth = 1;
-        ctx.setLineDash([5, 5]);
-        ctx.strokeRect(-w / 2, -h / 2, w, h);
-        ctx.setLineDash([]);
-
-        ctx.fillStyle = accent;
-        ctx.strokeStyle = '#ffffff';
-        ctx.lineWidth = 1.5;
-
-        const drawHandle = (x: number, y: number, isCrop = false) => {
-          ctx.beginPath();
-          if (isCrop) {
-            ctx.fillRect(x - 6, y - 6, 12, 12);
-            ctx.strokeRect(x - 6, y - 6, 12, 12);
-          } else {
-            ctx.arc(x, y, 7, 0, 2 * Math.PI);
-            ctx.fill();
-            ctx.stroke();
-          }
-        };
-
-        drawHandle(-w / 2, -h / 2);
-        drawHandle(w / 2, -h / 2);
-        drawHandle(-w / 2, h / 2);
-        drawHandle(w / 2, h / 2);
-
-        drawHandle(0, -h / 2, true);
-        drawHandle(0, h / 2, true);
-        drawHandle(-w / 2, 0, true);
-        drawHandle(w / 2, 0, true);
-
-        ctx.beginPath();
-        ctx.moveTo(0, -h / 2);
-        ctx.lineTo(0, -h / 2 - 25);
-        ctx.stroke();
-        drawHandle(0, -h / 2 - 25);
-      }
-
-      ctx.restore();
-    }
-  );
-
   LC['defineShape']('SelectionGroupOverlay', {
     constructor: function (this: Record<string, unknown>, args: Record<string, unknown>) {
       this['shapes'] = args['shapes'];
+      this['unit'] = args['unit'] ?? 1;
     },
     getBoundingRect: function (this: Record<string, unknown>) {
       return getSelectionBounds(this['shapes'] as Record<string, unknown>[]);
@@ -260,31 +177,7 @@ export function registerImprovedSelectShapes(LC: Record<string, unknown>): void 
     'SelectionGroupOverlay',
     function (ctx: CanvasRenderingContext2D, overlay: Record<string, unknown>) {
       const bounds = getSelectionBounds(overlay['shapes'] as Record<string, unknown>[]);
-      const { x, y, width, height } = bounds;
-      ctx.save();
-      ctx.strokeStyle = resolveAccentBorderColor();
-      ctx.fillStyle = resolveAccentColor();
-      ctx.lineWidth = 1;
-      ctx.setLineDash([5, 5]);
-      ctx.strokeRect(x, y, width, height);
-      ctx.setLineDash([]);
-      ctx.beginPath();
-      ctx.moveTo(x + width / 2, y);
-      ctx.lineTo(x + width / 2, y - 25);
-      ctx.stroke();
-      for (const [hx, hy] of [
-        [x, y],
-        [x + width, y],
-        [x, y + height],
-        [x + width, y + height],
-        [x + width / 2, y - 25],
-      ]) {
-        ctx.beginPath();
-        ctx.arc(hx, hy, 7, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.stroke();
-      }
-      ctx.restore();
+      drawSelectionBox(ctx, bounds, (overlay['unit'] as number) || 1);
     }
   );
 
@@ -328,10 +221,10 @@ export function registerImprovedSelectShapes(LC: Record<string, unknown>): void 
       const height = Math.abs(end.y - start.y);
 
       ctx.save();
-      ctx.strokeStyle = resolveAccentBorderColor();
-      ctx.fillStyle = resolveAccentColor();
-      ctx.lineWidth = 1;
-      ctx.setLineDash([5, 4]);
+      const unit = (shape['unit'] as number) || 1;
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = unit;
+      ctx.setLineDash([2 * unit, 3 * unit]);
       ctx.beginPath();
       if (mode === 'circle') {
         ctx.ellipse(left + width / 2, top + height / 2, width / 2, height / 2, 0, 0, 2 * Math.PI);
@@ -342,13 +235,14 @@ export function registerImprovedSelectShapes(LC: Record<string, unknown>): void 
         ctx.rect(left, top, width, height);
       }
 
-      ctx.fillStyle = 'rgba(80, 140, 255, 0.12)';
-      ctx.fill();
+      ctx.stroke();
+      ctx.strokeStyle = '#202020';
+      ctx.lineDashOffset = 2.5 * unit;
       ctx.stroke();
       if (mode === 'polygon' && path.length) {
         ctx.setLineDash([]);
         ctx.beginPath();
-        ctx.arc(path[0].x, path[0].y, 5, 0, Math.PI * 2);
+        ctx.arc(path[0].x, path[0].y, 5 * unit, 0, Math.PI * 2);
         ctx.stroke();
       }
       ctx.restore();
