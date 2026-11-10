@@ -1,7 +1,36 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ShapeHitTesting } from './shape-hit-testing';
+import { getShapeBounds } from './geometry';
 
 describe('renderer-based selection hit testing', () => {
+  it('includes the full width and end caps of native LC lines when rasterizing', () => {
+    expect(
+      getShapeBounds({
+        className: 'Line',
+        x1: 240,
+        y1: 90,
+        x2: 40,
+        y2: 90,
+        strokeWidth: 12,
+        getBoundingRect: () => ({ x: 34, y: 84, width: 206, height: 6 }),
+      })
+    ).toEqual({ x: 34, y: 84, width: 212, height: 12 });
+  });
+
+  it('includes rotated rectangle stroke corners in raster bounds', () => {
+    const bounds = getShapeBounds({
+      className: 'Rectangle',
+      x: 0,
+      y: 0,
+      width: 100,
+      height: 50,
+      strokeWidth: 10,
+      rotation: Math.PI / 4,
+      getBoundingRect: () => ({}),
+    });
+    expect(bounds?.width).toBeCloseTo(170 / Math.sqrt(2));
+    expect(bounds?.height).toBeCloseTo(170 / Math.sqrt(2));
+  });
   afterEach(() => vi.unstubAllGlobals());
 
   function setup() {

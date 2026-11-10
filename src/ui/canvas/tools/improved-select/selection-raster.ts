@@ -41,7 +41,7 @@ export function maskSelection(
 
 export function imageShape(canvas: HTMLCanvasElement, bounds: SelectionBounds): Shape {
   Object.defineProperty(canvas, 'src', {
-    value: canvas.toDataURL('image/png'),
+    get: () => canvas.toDataURL('image/png'),
     configurable: true,
   });
   return LC.createShape('Image', {

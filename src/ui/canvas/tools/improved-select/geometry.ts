@@ -7,6 +7,20 @@ export interface SelectionBounds {
 
 export function getShapeBounds(shape: Record<string, unknown>): SelectionBounds | null {
   if (typeof shape['getBoundingRect'] !== 'function') return null;
+  if (shape['className'] === 'Line') {
+    // LC's Line bounds omit half the stroke at the right and bottom edges.
+    const x1 = shape['x1'] as number;
+    const y1 = shape['y1'] as number;
+    const x2 = shape['x2'] as number;
+    const y2 = shape['y2'] as number;
+    const stroke = (shape['strokeWidth'] as number) || 0;
+    return {
+      x: Math.min(x1, x2) - stroke / 2,
+      y: Math.min(y1, y2) - stroke / 2,
+      width: Math.abs(x2 - x1) + stroke,
+      height: Math.abs(y2 - y1) + stroke,
+    };
+  }
   if (shape['className'] === 'Rectangle' || shape['className'] === 'Ellipse') {
     const x = shape['x'] as number;
     const y = shape['y'] as number;
@@ -19,17 +33,19 @@ export function getShapeBounds(shape: Record<string, unknown>): SelectionBounds 
       const sin = Math.sin(rotation);
       const rotatedWidth =
         shape['className'] === 'Ellipse'
-          ? Math.hypot(width * cos, height * sin)
-          : Math.abs(width * cos) + Math.abs(height * sin);
+          ? Math.hypot(width * cos, height * sin) + stroke
+          : (Math.abs(width) + stroke) * Math.abs(cos) +
+            (Math.abs(height) + stroke) * Math.abs(sin);
       const rotatedHeight =
         shape['className'] === 'Ellipse'
-          ? Math.hypot(width * sin, height * cos)
-          : Math.abs(width * sin) + Math.abs(height * cos);
+          ? Math.hypot(width * sin, height * cos) + stroke
+          : (Math.abs(width) + stroke) * Math.abs(sin) +
+            (Math.abs(height) + stroke) * Math.abs(cos);
       return {
-        x: x + width / 2 - (rotatedWidth + stroke) / 2,
-        y: y + height / 2 - (rotatedHeight + stroke) / 2,
-        width: rotatedWidth + stroke,
-        height: rotatedHeight + stroke,
+        x: x + width / 2 - rotatedWidth / 2,
+        y: y + height / 2 - rotatedHeight / 2,
+        width: rotatedWidth,
+        height: rotatedHeight,
       };
     }
     return {

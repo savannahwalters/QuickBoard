@@ -28,6 +28,7 @@ import { ToolsBarComponent } from '../tools-bar/tools-bar.component';
 import { CanvasUndoRedoService } from '../undo-redo/canvas-undo-redo.service';
 import { Brush, ensureSquareBrushShapeRegistered } from '../../canvas/tools/brush';
 import { ObjectEraser } from '../../canvas/tools/objecteraser';
+import { PixelEraser } from '../tools/pixel-eraser';
 import { BucketFill } from '../tools/bucketfill';
 import { ImprovedSelectShape, registerImprovedSelectShapes } from '../tools/improved-select';
 import { getCopiedShapes, setCopiedShapes } from '../tools/improved-select/selection-clipboard';
@@ -553,7 +554,7 @@ export class CanvasComponent implements AfterViewInit, OnDestroy {
       new ImprovedSelectShape(this.lc, 'lasso', returnToObjectSelect)
     );
     this.toolInstances.set('pencil', new LC.tools.Pencil(this.lc));
-    this.toolInstances.set('eraser', new LC.tools.Eraser(this.lc));
+    this.toolInstances.set('eraser', new PixelEraser(this.lc));
     this.toolInstances.set('brush', new Brush(this.lc));
     this.toolInstances.set('rectangle', new LC.tools.Rectangle(this.lc));
     this.toolInstances.set('circle', new LC.tools.Ellipse(this.lc));

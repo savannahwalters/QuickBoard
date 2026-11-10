@@ -69,6 +69,13 @@ Builds will be output to the `release/` directory.
 **Note:** To build for macOS, you need to run on macOS. For Windows builds, use Windows or Linux with Wine.
 **Note:** iOS builds require a paid GitHub account for macOS runners. Android builds run on free Linux runners.
 
+## Erasing
+
+The standard eraser removes foreground pixels instead of adding an eraser mask. Touched
+objects become cropped image pieces that can be selected and transformed independently;
+untouched objects keep their original geometry. A complete eraser stroke is one undo step.
+Object Eraser still removes entire objects.
+
 ## License
 
 AGPLv3
