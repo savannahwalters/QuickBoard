@@ -43,7 +43,7 @@ export class App implements OnInit, OnDestroy {
   protected readonly isCanvasFullscreen = signal(false);
   protected readonly saveService = inject(SaveService);
   protected readonly dialogMode = signal<'about' | 'settings' | 'shortcuts' | null>(null);
-  private readonly canvas = viewChild(CanvasComponent);
+  protected readonly canvas = viewChild(CanvasComponent);
   private readonly el = inject(ElementRef);
   private readonly themeService = inject(ThemeService);
   private readonly windowScalingService = inject(WindowScalingService);

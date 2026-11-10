@@ -22,6 +22,11 @@ declare global {
       setCustomTheme: (theme: CustomThemeId | null) => void;
       onShortcut: (handler: (option: string) => void) => () => void;
       onImportImage: (handler: () => void) => () => void;
+      pickImageFile: () => Promise<
+        | { success: true; cancelled: true }
+        | { success: true; name: string; type: string; data: string; cancelled?: false }
+        | { success: false; message: string }
+      >;
       onSaveResult: (
         handler: (payload: { filePath: string; success: boolean; message?: string }) => void,
       ) => () => void;

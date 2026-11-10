@@ -16,7 +16,7 @@ type ToolGroupKey = 'draw' | 'shape' | 'erase' | 'edit';
 type ToolOption = Readonly<{
   id: string;
   label: string;
-  icon: string;
+  icon?: string;
   iconPath?: string;
   iconPathLength?: number;
 }>;
@@ -55,27 +55,23 @@ export class ToolsBarComponent implements OnDestroy {
     {
       id: 'rectangle-select',
       label: 'Rectangle Select',
-      icon: '',
       iconPath: 'M4 4H20V20H4Z',
       iconPathLength: 64,
     },
     {
       id: 'circle-select',
       label: 'Circle Select',
-      icon: '',
       iconPath: 'M12 3A9 9 0 1 1 12 21A9 9 0 1 1 12 3Z',
       iconPathLength: 60,
     },
     {
       id: 'polygon-select',
       label: 'Polygon Select',
-      icon: '',
       iconPath: 'M3 9L8 6L11 10L18 3L22 16L12 21L8 15L3 16Z',
     },
     {
       id: 'lasso-select',
       label: 'Lasso Select',
-      icon: '',
       iconPath:
         'M7 16C4 15 3 12 4 9C6 6 9 6 12 4C16 1 21 4 21 8C22 13 17 16 10 16C8 16 7 15 7 16C7 20 9 23 11 21',
     },
@@ -309,6 +305,10 @@ export class ToolsBarComponent implements OnDestroy {
   }
 
   public requestImageImport(): void {
+    if (window.quickboard?.pickImageFile) {
+      void this.importDesktopImage();
+      return;
+    }
     const input = this.document.createElement('input');
     input.type = 'file';
     input.accept = 'image/*';
@@ -328,6 +328,21 @@ export class ToolsBarComponent implements OnDestroy {
     input.addEventListener('cancel', cleanup, { once: true });
     this.document.body.appendChild(input);
     input.click();
+  }
+
+  private async importDesktopImage(): Promise<void> {
+    try {
+      const result = await window.quickboard!.pickImageFile();
+      if (!result.success) throw new Error(result.message);
+      if (result.cancelled) return;
+      const bytes = Uint8Array.from(atob(result.data), (character) => character.charCodeAt(0));
+      this.imageSelected.emit(new File([bytes], result.name, { type: result.type }));
+    } catch (error) {
+      console.error('Image import failed:', error);
+      window.alert(
+        'Failed to import image: ' + (error instanceof Error ? error.message : String(error))
+      );
+    }
   }
 
   public toggleCanvasFullscreen(): void {

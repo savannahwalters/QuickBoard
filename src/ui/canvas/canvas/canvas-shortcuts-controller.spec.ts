@@ -13,7 +13,7 @@ describe('selection deletion shortcuts', () => {
     const canvas = {
       document,
       deleteSelection,
-      el: { nativeElement: document.body },
+      containsElement: (element: Element) => document.body.contains(element),
     } as unknown as CanvasComponent;
     return { controller: new CanvasShortcutsController(canvas), deleteSelection };
   }

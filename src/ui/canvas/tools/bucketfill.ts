@@ -1,7 +1,6 @@
-import { LCInstance } from '../literally-canvas-interfaces';
+import type { LCInstance, LCTool } from '../literally-canvas-interfaces';
 
-// Fill Tool - fills an area with a color
-export class BucketFill {
+export class BucketFill implements LCTool {
   name = 'Bucket Fill';
   iconName = 'bucket-fill';
   optionsStyle = '';
@@ -11,8 +10,6 @@ export class BucketFill {
   // Render source image at half resolution for faster flood fill (4× fewer pixels).
   // The saved Image shape uses scale: 2 to stretch it back to full world size.
   private static readonly SRC_SCALE = 0.5;
-
-  constructor(private lc: LCInstance) { /* no-op */ }
 
   begin(x: number, y: number, lc: LCInstance): void {
     const color = lc.getColor('secondary') || '#000000';
@@ -103,10 +100,8 @@ export class BucketFill {
   end(): void { /* no-op */ }
   ['continue'](): void { /* no-op */ }
 
-  willBecomeActive(): void { /* no-op */ }
   didBecomeActive(): void { /* no-op */ }
   willBecomeInactive(): void { /* no-op */ }
-  didBecomeInactive(): void { /* no-op */ }
 }
 
 function parseFillColor(value: string): number[] | null {

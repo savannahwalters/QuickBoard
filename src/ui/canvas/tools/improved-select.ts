@@ -1,5 +1,4 @@
 import type { LCInstance, LCTool } from '../literally-canvas-interfaces';
-import { getResizeCursorForAngle } from './improved-select/cursors';
 import {
   getSelectionBounds,
   getShapeBounds,
@@ -30,8 +29,6 @@ import {
   setSelectionRegion,
   type SelectionRegion,
 } from './improved-select/selection-state';
-
-export { registerImprovedSelectShapes } from './improved-select/register-shapes';
 
 type Shape = Record<string, unknown>;
 interface Point {
@@ -166,17 +163,17 @@ export class ImprovedSelectShape implements LCTool {
     return true;
   }
 
-  selectShapes(shapes: Shape[], lc: LCInstance): void {
-    setSelectionRegion(lc, null);
+  selectShapes(shapes: Shape[]): void {
+    setSelectionRegion(this.lc, null);
     this.setSelected(shapes);
   }
 
-  clearSelection(lc: LCInstance): void {
+  clearSelection(): void {
     this.commitGesture();
     this.marquee = false;
     this.path = [];
     this.preview = null;
-    setSelectionRegion(lc, null);
+    setSelectionRegion(this.lc, null);
     this.setSelected([]);
   }
 
@@ -217,11 +214,9 @@ export class ImprovedSelectShape implements LCTool {
   private cursor(mode: GroupHandle | null): string {
     if (!mode) return 'default';
     if (mode === 'group-rotate') return 'pointer';
-    if (mode === 'group-l' || mode === 'group-r') return getResizeCursorForAngle(0);
-    if (mode === 'group-t' || mode === 'group-b') return getResizeCursorForAngle(Math.PI / 2);
-    return getResizeCursorForAngle(
-      mode === 'group-tl' || mode === 'group-br' ? Math.PI / 4 : -Math.PI / 4
-    );
+    if (mode === 'group-l' || mode === 'group-r') return 'ew-resize';
+    if (mode === 'group-t' || mode === 'group-b') return 'ns-resize';
+    return mode === 'group-tl' || mode === 'group-br' ? 'nwse-resize' : 'nesw-resize';
   }
 
   private down(point: Point): void {

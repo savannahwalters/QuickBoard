@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { LCInstance } from '../literally-canvas-interfaces';
+import type { LCInstance, ShapeRegistry } from '../literally-canvas-interfaces';
 import { ImprovedSelectShape } from './improved-select';
 import { getSelectionBounds, getShapeBounds } from './improved-select/geometry';
 import { registerImprovedSelectShapes } from './improved-select/register-shapes';
@@ -63,10 +63,13 @@ describe('selection interactions', () => {
 
   function setup() {
     const definitions = new Map<string, Definition>();
-    const renderers = new Map<string, (ctx: unknown, shape: unknown) => void>();
+    const renderers = new Map<string, Parameters<ShapeRegistry['defineCanvasRenderer']>[1]>();
     const api = {
       defineShape: (name: string, definition: Definition) => definitions.set(name, definition),
-      defineCanvasRenderer: (name: string, renderer: (ctx: unknown, shape: unknown) => void) =>
+      defineCanvasRenderer: (
+        name: string,
+        renderer: Parameters<ShapeRegistry['defineCanvasRenderer']>[1]
+      ) =>
         renderers.set(name, renderer),
       createShape: (className: string, args: Record<string, unknown>): Shape => {
         const definition = definitions.get(className);
@@ -195,7 +198,7 @@ describe('selection interactions', () => {
     const last = h.rectangle(80, 80);
     h.lc.shapes.push(first, untouched, last);
     h.activate(h.objectTool);
-    h.objectTool.selectShapes([first, last], h.lc);
+    h.objectTool.selectShapes([first, last]);
     expect(h.objectTool.deleteSelectedShapes()).toBe(true);
     expect(h.lc.shapes).toEqual([untouched]);
     expect(h.objectTool.getSelectedShapes()).toEqual([]);
@@ -423,7 +426,7 @@ describe('selection interactions', () => {
     const shapes = Array.from({ length: count }, () => h.rectangle());
     h.lc.shapes.push(...shapes);
     h.activate(h.objectTool);
-    h.objectTool.selectShapes(shapes, h.lc);
+    h.objectTool.selectShapes(shapes);
     const before = getSelectionBounds(shapes);
     h.lc.trigger('lc-pointerdown', { x: 201, y: 201 });
     h.lc.trigger('lc-pointerdrag', { x: 303, y: 303 });
@@ -438,7 +441,7 @@ describe('selection interactions', () => {
 
   it('renders four corners and a rotate handle for vector and group selections', () => {
     const h = setup();
-    const ctx = {
+    const ctx = Object.assign(document.createElement('canvas').getContext('2d')!, {
       save: vi.fn(),
       restore: vi.fn(),
       setLineDash: vi.fn(),
@@ -449,8 +452,12 @@ describe('selection interactions', () => {
       arc: vi.fn(),
       fill: vi.fn(),
       stroke: vi.fn(),
-    };
-    h.renderers.get('SelectionGroupOverlay')!(ctx, { shapes: [h.rectangle()] });
+    });
+    h.renderers.get('SelectionGroupOverlay')!(
+      ctx,
+      { shapes: [h.rectangle()] },
+      vi.fn()
+    );
     expect(ctx.arc).toHaveBeenCalledTimes(9);
     expect(ctx.fill).toHaveBeenCalledTimes(9);
   });
@@ -460,7 +467,7 @@ describe('selection interactions', () => {
     const shapes = Array.from({ length: count }, () => h.rectangle(100, 50));
     h.lc.shapes.push(...shapes);
     h.activate(h.objectTool);
-    h.objectTool.selectShapes(shapes, h.lc);
+    h.objectTool.selectShapes(shapes);
     h.lc.canvas.dispatchEvent(new MouseEvent('pointermove', { clientX: 150, clientY: 74 }));
     expect(h.lc.canvas.style.cursor).toBe('pointer');
     h.lc.trigger('lc-pointerdown', { x: 150, y: 74 });
@@ -497,7 +504,7 @@ describe('selection interactions', () => {
     const original = h.rectangle();
     h.lc.shapes.push(original);
     h.activate(h.objectTool);
-    h.objectTool.selectShapes([original], h.lc);
+    h.objectTool.selectShapes([original]);
     h.lc.trigger('lc-pointerdown', { x: 201, y: 150 });
     h.lc.trigger('lc-pointerdrag', { x: 303, y: 150 });
     h.lc.trigger('lc-pointerup', { x: 303, y: 150 });
@@ -515,7 +522,7 @@ describe('selection interactions', () => {
       b = h.rectangle();
     h.lc.shapes.push(a, b);
     h.activate(h.objectTool);
-    h.objectTool.selectShapes([a, b], h.lc);
+    h.objectTool.selectShapes([a, b]);
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Shift', shiftKey: true }));
     h.lc.trigger('lc-pointerdown', { x: 201, y: 150 });
     h.lc.trigger('lc-pointerdrag', { x: 160, y: 150 });
@@ -543,7 +550,7 @@ describe('selection interactions', () => {
     const prototype = Object.getPrototypeOf(future);
     h.lc.shapes.push(future);
     h.activate(h.objectTool);
-    h.objectTool.selectShapes([future], h.lc);
+    h.objectTool.selectShapes([future]);
     h.lc.trigger('lc-pointerdown', { x: 200, y: 200 });
     h.lc.trigger('lc-pointerdrag', { x: 300, y: 300 });
     h.lc.trigger('lc-pointerup', { x: 300, y: 300 });

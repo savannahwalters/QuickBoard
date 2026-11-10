@@ -1,4 +1,4 @@
-import { CanvasComponent } from './canvas.component';
+import type { CanvasComponent } from './canvas.component';
 import { matchShortcut } from 'src/shared/shortcuts';
 
 export class CanvasShortcutsController {
@@ -16,12 +16,7 @@ export class CanvasShortcutsController {
     }
 
     const activeE = this.canvas.document.activeElement;
-    if (
-      activeE &&
-      activeE !== this.canvas.document.body &&
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      !(this.canvas as any).el.nativeElement.contains(activeE)
-    ) {
+    if (activeE && activeE !== this.canvas.document.body && !this.canvas.containsElement(activeE)) {
       return;
     }
 

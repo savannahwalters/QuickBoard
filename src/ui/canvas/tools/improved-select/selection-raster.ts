@@ -5,7 +5,7 @@ import { renderShape } from './shape-hit-testing';
 
 type Shape = Record<string, unknown>;
 
-export function maskSelection(
+function maskSelection(
   source: HTMLCanvasElement,
   bounds: SelectionBounds,
   region: SelectionRegion,

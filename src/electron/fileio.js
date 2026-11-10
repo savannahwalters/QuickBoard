@@ -101,6 +101,43 @@ async function loadBoardIntoRenderer(win) {
 }
 
 function registerIpcHandlers() {
+  ipcMain.handle('quickboard:pick-image-file', async (event) => {
+    try {
+      const win = BrowserWindow.fromWebContents(event.sender);
+      if (!win || win.isDestroyed()) throw new Error('The image import window is unavailable.');
+      const imageTypes = {
+        png: 'image/png',
+        jpg: 'image/jpeg',
+        jpeg: 'image/jpeg',
+        gif: 'image/gif',
+        webp: 'image/webp',
+        bmp: 'image/bmp',
+        svg: 'image/svg+xml',
+        avif: 'image/avif',
+        ico: 'image/x-icon',
+      };
+      const { canceled, filePaths } = await dialog.showOpenDialog(win, {
+        title: 'Import Image',
+        properties: ['openFile'],
+        filters: [
+          {
+            name: 'Images',
+            extensions: Object.keys(imageTypes),
+          },
+        ],
+      });
+      if (canceled || !filePaths?.length) return { success: true, cancelled: true };
+      const filePath = filePaths[0];
+      const type = imageTypes[path.extname(filePath).slice(1).toLowerCase()];
+      if (!type) throw new Error('This image format is not supported.');
+      const data = await fs.readFile(filePath);
+      return { success: true, name: path.basename(filePath), type, data: data.toString('base64') };
+    } catch (error) {
+      console.error('Image import failed:', error);
+      return { success: false, message: error instanceof Error ? error.message : String(error) };
+    }
+  });
+
   ipcMain.on('quickboard:request-save-from-renderer', async (event) => {
     try {
       const win = BrowserWindow.fromWebContents(event.sender);

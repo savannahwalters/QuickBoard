@@ -8,7 +8,7 @@ import { ThemeService } from '../../services/theme.service';
 import { UndoRedoService } from '../../services/undo-redo.service';
 import { WebToolbarComponent } from './web-toolbar.component';
 
-describe('About toolbar action', () => {
+describe('web toolbar actions', () => {
   afterEach(() => {
     TestBed.resetTestingModule();
     vi.restoreAllMocks();
@@ -25,6 +25,7 @@ describe('About toolbar action', () => {
         { provide: PlatformFileService, useValue: { isNative } },
       ],
     });
+
     const toolbar = TestBed.createComponent(WebToolbarComponent).componentInstance;
     const emitted = vi.fn();
     const open = vi.spyOn(window, 'open').mockReturnValue(null);
@@ -43,5 +44,32 @@ describe('About toolbar action', () => {
         'width=320,height=260,noopener,noreferrer'
       );
     }
+  });
+
+  it('emits image import from the File menu and closes the dropdown', () => {
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: SbdService, useValue: {} },
+        { provide: UndoRedoService, useValue: {} },
+        { provide: ExportIpcService, useValue: {} },
+        { provide: ThemeService, useValue: { currentTheme: () => 'system' } },
+        { provide: SaveService, useValue: {} },
+        { provide: PlatformFileService, useValue: {} },
+      ],
+    });
+    const fixture = TestBed.createComponent(WebToolbarComponent);
+    const emitted = vi.fn();
+    fixture.componentInstance.importImage.subscribe(emitted);
+    fixture.componentInstance.activeMenu.set('file');
+    fixture.detectChanges();
+    const element = fixture.nativeElement as HTMLElement;
+    const button = [...element.querySelectorAll('button')].find(
+      (item) => item.textContent?.trim() === 'Import Image...'
+    );
+    expect(button).toBeDefined();
+    button!.click();
+    expect(emitted).toHaveBeenCalledOnce();
+    expect(fixture.componentInstance.activeMenu()).toBeNull();
+    fixture.destroy();
   });
 });

@@ -2,18 +2,12 @@ import { getSelectionBounds } from './geometry';
 import { registerRotatableShapes } from './rotatable-shapes';
 import { drawSelectionBox } from './selection-handles';
 import { selectionColors } from './selection-style';
+import type { ShapeRegistry } from '../../literally-canvas-interfaces';
 
-export function registerImprovedSelectShapes(LC: Record<string, unknown>): void {
-  if (
-    !LC ||
-    typeof LC['defineShape'] !== 'function' ||
-    typeof LC['defineCanvasRenderer'] !== 'function'
-  )
-    return;
-
+export function registerImprovedSelectShapes(LC: ShapeRegistry): void {
   registerRotatableShapes(LC);
 
-  LC['defineShape']('Image', {
+  LC.defineShape('Image', {
     constructor: function (this: Record<string, unknown>, args: Record<string, unknown>) {
       if (!args) args = {};
       this['x'] = args['x'] || 0;
@@ -98,30 +92,23 @@ export function registerImprovedSelectShapes(LC: Record<string, unknown>): void 
         if (data['crossOrigin']) img.crossOrigin = data['crossOrigin'] as string;
         img.src = data['imageSrc'] as string;
       }
-      const LCglobal = (window as unknown as Record<string, unknown>)['LC'] as Record<
-        string,
-        unknown
-      >;
-      return (LCglobal['createShape'] as (n: string, a: Record<string, unknown>) => unknown)(
-        'Image',
-        {
-          x: data['x'],
-          y: data['y'],
-          image: img,
-          scale: data['scale'],
-          scaleX: data['scaleX'],
-          scaleY: data['scaleY'],
-          rotation: data['rotation'],
-          cropX: data['cropX'],
-          cropY: data['cropY'],
-          cropWidth: data['cropWidth'],
-          cropHeight: data['cropHeight'],
-        }
-      );
+      return LC.createShape('Image', {
+        x: data['x'],
+        y: data['y'],
+        image: img,
+        scale: data['scale'],
+        scaleX: data['scaleX'],
+        scaleY: data['scaleY'],
+        rotation: data['rotation'],
+        cropX: data['cropX'],
+        cropY: data['cropY'],
+        cropWidth: data['cropWidth'],
+        cropHeight: data['cropHeight'],
+      });
     },
   });
 
-  LC['defineCanvasRenderer'](
+  LC.defineCanvasRenderer(
     'Image',
     function (
       ctx: CanvasRenderingContext2D,

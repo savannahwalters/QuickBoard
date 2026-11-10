@@ -58,7 +58,20 @@ export interface LCInstance {
 
 export type LiterallyCanvasTool = new (lc: LCInstance) => LCTool;
 
-export interface LiterallyCanvas {
+export interface ShapeRegistry {
+  defineShape(name: string, definition: Record<string, unknown>): unknown;
+  defineCanvasRenderer(
+    name: string,
+    draw: (
+      context: CanvasRenderingContext2D,
+      shape: Record<string, unknown>,
+      retryCallback: () => void
+    ) => void
+  ): void;
+  createShape(type: string, args: Record<string, unknown>): unknown;
+}
+
+export interface LiterallyCanvas extends ShapeRegistry {
   init(
     element: HTMLElement,
     options?: {
@@ -68,16 +81,12 @@ export interface LiterallyCanvas {
   ): LCInstance;
   tools: {
     Pencil: LiterallyCanvasTool;
-    Eraser: LiterallyCanvasTool;
     Rectangle: LiterallyCanvasTool;
     Ellipse: LiterallyCanvasTool;
-    SelectShape: LiterallyCanvasTool;
     Polygon?: LiterallyCanvasTool;
     Triangle?: LiterallyCanvasTool;
   };
-  createShape(type: string, args: Record<string, unknown>): unknown;
   JSONToShape(shape: Record<string, unknown>): unknown;
-  snapshotJSONToShapes(snapshot: string): unknown[];
   shapeToJSON(shape: unknown): Record<string, unknown>;
   renderSnapshotToImage?(
     snapshot: Record<string, unknown>,
@@ -85,7 +94,7 @@ export interface LiterallyCanvas {
       rect: { x: number; y: number; width: number; height: number };
       scale: number;
       includeWatermark: boolean;
-    },
+    }
   ): HTMLCanvasElement;
 }
 

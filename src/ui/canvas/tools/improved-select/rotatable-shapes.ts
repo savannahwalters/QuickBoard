@@ -1,13 +1,9 @@
 import { getShapeBounds } from './geometry';
+import type { ShapeRegistry } from '../../literally-canvas-interfaces';
 
-export function registerRotatableShapes(api: Record<string, unknown>): void {
-  const defineShape = api['defineShape'] as (name: string, props: Record<string, unknown>) => void;
-  const defineRenderer = api['defineCanvasRenderer'] as (
-    name: string,
-    draw: (ctx: CanvasRenderingContext2D, shape: Record<string, number | string>) => void
-  ) => void;
+export function registerRotatableShapes(api: ShapeRegistry): void {
   for (const name of ['Rectangle', 'Ellipse']) {
-    defineShape(name, {
+    api.defineShape(name, {
       constructor(this: Record<string, unknown>, args: Record<string, unknown> = {}) {
         Object.assign(
           this,
@@ -46,7 +42,7 @@ export function registerRotatableShapes(api: Record<string, unknown>): void {
         this['y'] = point.y;
       },
     });
-    defineRenderer(name, (ctx, shape) => {
+    api.defineCanvasRenderer(name, (ctx, shape) => {
       const x = shape['x'] as number;
       const y = shape['y'] as number;
       const width = shape['width'] as number;

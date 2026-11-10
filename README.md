@@ -69,16 +69,6 @@ Builds will be output to the `release/` directory.
 **Note:** To build for macOS, you need to run on macOS. For Windows builds, use Windows or Linux with Wine.
 **Note:** iOS builds require a paid GitHub account for macOS runners. Android builds run on free Linux runners.
 
-## Erasing
-
-The standard eraser removes foreground pixels instead of adding an eraser mask. Touched
-objects become cropped image pieces that can be selected and transformed independently;
-untouched objects keep their original geometry. A complete eraser stroke is one undo step.
-Object Eraser still removes entire objects.
-
-With the selection tool active, press Backspace (labelled Delete on Mac keyboards) or
-Delete to remove the selected objects. This removes whole objects, like Object Eraser,
-and can be undone in one step. Text fields keep their normal editing behavior.
 
 ## License
 

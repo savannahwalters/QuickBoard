@@ -30,8 +30,10 @@ import { Brush, ensureSquareBrushShapeRegistered } from '../../canvas/tools/brus
 import { ObjectEraser } from '../../canvas/tools/objecteraser';
 import { PixelEraser } from '../tools/pixel-eraser';
 import { BucketFill } from '../tools/bucketfill';
-import { ImprovedSelectShape, registerImprovedSelectShapes } from '../tools/improved-select';
-import { getCopiedShapes, setCopiedShapes } from '../tools/improved-select/selection-clipboard';
+import { ImprovedSelectShape } from '../tools/improved-select';
+import { registerImprovedSelectShapes } from '../tools/improved-select/register-shapes';
+import { createPastedShapes, setCopiedShapes } from '../tools/improved-select/selection-clipboard';
+import { getSelectionBounds } from '../tools/improved-select/geometry';
 import { ZoomTool } from '../tools/zoom';
 import { LCInstance, LCTool } from '../literally-canvas-interfaces';
 import { CanvasViewportController } from './canvas-viewport-controller';
@@ -323,40 +325,15 @@ export class CanvasComponent implements AfterViewInit, OnDestroy {
     const serialized = selection.map((shape) => LC.shapeToJSON(shape));
     setCopiedShapes(serialized);
 
-    const bounds = selection.reduce<{
-      left: number;
-      top: number;
-      right: number;
-      bottom: number;
-    }>(
-      (result, shape) => {
-        if (typeof shape['getBoundingRect'] !== 'function') return result;
-        const rect = (
-          shape['getBoundingRect'] as () => {
-            x: number;
-            y: number;
-            width: number;
-            height: number;
-          }
-        )();
-        return {
-          left: Math.min(result.left, rect.x),
-          top: Math.min(result.top, rect.y),
-          right: Math.max(result.right, rect.x + rect.width),
-          bottom: Math.max(result.bottom, rect.y + rect.height),
-        };
-      },
-      { left: Infinity, top: Infinity, right: -Infinity, bottom: -Infinity }
-    );
+    const bounds = getSelectionBounds(selection);
 
     if (
       !navigator.clipboard?.write ||
       typeof ClipboardItem === 'undefined' ||
       !LC.renderSnapshotToImage ||
-      !Number.isFinite(bounds.left) ||
-      !Number.isFinite(bounds.top) ||
-      !Number.isFinite(bounds.right) ||
-      !Number.isFinite(bounds.bottom)
+      !Object.values(bounds).every(Number.isFinite) ||
+      bounds.width <= 0 ||
+      bounds.height <= 0
     ) {
       return;
     }
@@ -365,12 +342,7 @@ export class CanvasComponent implements AfterViewInit, OnDestroy {
     snapshot['backgroundShapes'] = [];
     snapshot['colors'] = { background: 'transparent' };
     const image = LC.renderSnapshotToImage(snapshot, {
-      rect: {
-        x: bounds.left,
-        y: bounds.top,
-        width: Math.max(1, bounds.right - bounds.left),
-        height: Math.max(1, bounds.bottom - bounds.top),
-      },
+      rect: bounds,
       scale: 1,
       includeWatermark: false,
     });
@@ -388,29 +360,11 @@ export class CanvasComponent implements AfterViewInit, OnDestroy {
 
   public async pasteSelection(): Promise<void> {
     if (!this.lc) return;
-    const copied = getCopiedShapes();
-    if (copied.length) {
-      const pasted = copied.map((data) => {
-        const shape = LC.JSONToShape(data) as Record<string, unknown>;
-        if (typeof shape['x'] === 'number') shape['x'] += 20;
-        if (typeof shape['y'] === 'number') shape['y'] += 20;
-        if (
-          typeof shape['x'] !== 'number' &&
-          typeof shape['y'] !== 'number' &&
-          typeof shape['setUpperLeft'] === 'function' &&
-          typeof shape['getBoundingRect'] === 'function'
-        ) {
-          const bounds = (shape['getBoundingRect'] as () => { x: number; y: number })();
-          (shape['setUpperLeft'] as (point: { x: number; y: number }) => void).call(shape, {
-            x: bounds.x + 20,
-            y: bounds.y + 20,
-          });
-        }
-        return shape;
-      });
+    const pasted = createPastedShapes();
+    if (pasted.length) {
       for (const shape of pasted) this.lc.saveShape(shape);
       this.setTool('select');
-      this.getActiveSelectionTool()?.selectShapes(pasted, this.lc);
+      this.getActiveSelectionTool()?.selectShapes(pasted);
       return;
     }
 
@@ -441,8 +395,7 @@ export class CanvasComponent implements AfterViewInit, OnDestroy {
       this.currentBoardId = currentBoard.id;
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    registerImprovedSelectShapes(LC as any);
+    registerImprovedSelectShapes(LC);
 
     // Initialize Literally Canvas — container is already at the correct size
     this.lc = LC.init(container, {
@@ -563,15 +516,11 @@ export class CanvasComponent implements AfterViewInit, OnDestroy {
     this.toolInstances.set('rectangle', new LC.tools.Rectangle(this.lc));
     this.toolInstances.set('circle', new LC.tools.Ellipse(this.lc));
     // Use the built-in LC polygon tool when available.
-    const shapeTools = LC.tools as {
-      Polygon?: new (lc: LCInstance) => LCTool;
-      Triangle?: new (lc: LCInstance) => LCTool;
-    };
-    const PolygonTool = shapeTools.Polygon ?? shapeTools.Triangle;
+    const PolygonTool = LC.tools.Polygon ?? LC.tools.Triangle;
     if (PolygonTool) {
       this.toolInstances.set('polygon', new PolygonTool(this.lc));
     }
-    this.toolInstances.set('bucket-fill', new BucketFill(this.lc));
+    this.toolInstances.set('bucket-fill', new BucketFill());
     this.toolInstances.set(
       'zoom',
       new ZoomTool(
@@ -581,18 +530,7 @@ export class CanvasComponent implements AfterViewInit, OnDestroy {
       )
     );
 
-    const objectEraser = this.canvasUndoRedo.instrumentObjectEraser(
-      new ObjectEraser(this.lc),
-      (id, include, options) =>
-        this.canvasPersistence.persistCurrentBoardData(
-          this.lc,
-          id,
-          this.currentBoardId,
-          include,
-          options
-        )
-    );
-    this.toolInstances.set('object-eraser', objectEraser);
+    this.toolInstances.set('object-eraser', new ObjectEraser(this.lc));
 
     const brushTool = this.toolInstances.get('brush') as Brush | undefined;
     if (brushTool) {
@@ -626,10 +564,8 @@ export class CanvasComponent implements AfterViewInit, OnDestroy {
 
     this.canvasUndoRedo.beginBoardLoad();
 
-    const selectTool = this.toolInstances.get('select') as ImprovedSelectShape;
-    if (selectTool && typeof selectTool.clearSelection === 'function') {
-      selectTool.clearSelection(this.lc);
-    }
+    const selectTool = this.toolInstances.get('select');
+    if (selectTool instanceof ImprovedSelectShape) selectTool.clearSelection();
 
     // Clear canvas
     this.lc.shapes = [];
@@ -852,6 +788,10 @@ export class CanvasComponent implements AfterViewInit, OnDestroy {
     return tool instanceof ImprovedSelectShape ? tool : undefined;
   }
 
+  public containsElement(element: Element): boolean {
+    return this.el.nativeElement.contains(element);
+  }
+
   public setCanvasZoomLevel(level: number): void {
     this.viewport.setZoomLevel(level);
   }
@@ -1043,12 +983,26 @@ export class CanvasComponent implements AfterViewInit, OnDestroy {
   public handleImageFile(file: File): void {
     if (!this.lc) return;
 
+    const lc = this.lc;
+    const boardId = this.currentBoardId;
+    const reportError = (error: unknown) => {
+      console.error('Image import failed:', error);
+      window.alert(
+        `Failed to import image "${file.name}": ` +
+          (error instanceof Error ? error.message : 'The file could not be read.')
+      );
+    };
     const reader = new FileReader();
+    reader.onerror = () => reportError(reader.error);
     reader.onload = (e) => {
       const src = e.target?.result as string;
       const img = new Image();
+      img.onerror = () => reportError(new Error('The image could not be decoded.'));
       img.onload = () => {
-        if (!this.lc) return;
+        if (this.lc !== lc || this.currentBoardId !== boardId) {
+          reportError(new Error('The destination board changed while loading the image.'));
+          return;
+        }
 
         const defaultWidth = img.width;
         const defaultHeight = img.height;
@@ -1057,11 +1011,11 @@ export class CanvasComponent implements AfterViewInit, OnDestroy {
         // Find center of canvas
         const centerX =
           this.lc.canvas.width / 2 / (this.lc.scale * backingScale) -
-          this.lc.position.x / backingScale -
+          this.lc.position.x / (this.lc.scale * backingScale) -
           defaultWidth / 2;
         const centerY =
           this.lc.canvas.height / 2 / (this.lc.scale * backingScale) -
-          this.lc.position.y / backingScale -
+          this.lc.position.y / (this.lc.scale * backingScale) -
           defaultHeight / 2;
 
         // LC.createShape requires image: Image object
@@ -1074,6 +1028,7 @@ export class CanvasComponent implements AfterViewInit, OnDestroy {
 
         this.lc.saveShape(imageShape);
         this.setTool('select');
+        this.getActiveSelectionTool()?.selectShapes([imageShape as Record<string, unknown>]);
       };
       img.src = src;
     };
