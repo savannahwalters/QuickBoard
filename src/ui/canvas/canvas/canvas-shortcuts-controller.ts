@@ -5,7 +5,13 @@ export class CanvasShortcutsController {
   constructor(private readonly canvas: CanvasComponent) {}
 
   handleKeyDown(event: KeyboardEvent) {
-    if (event.ctrlKey || event.metaKey || event.altKey) {
+    if (
+      event.defaultPrevented ||
+      event.isComposing ||
+      event.ctrlKey ||
+      event.metaKey ||
+      event.altKey
+    ) {
       return;
     }
 
@@ -22,8 +28,13 @@ export class CanvasShortcutsController {
     if (
       activeE instanceof HTMLInputElement ||
       activeE instanceof HTMLTextAreaElement ||
-      (activeE as HTMLElement).isContentEditable
+      (activeE instanceof HTMLElement && activeE.isContentEditable)
     ) {
+      return;
+    }
+
+    if (event.key === 'Backspace' || event.key === 'Delete') {
+      if (this.canvas.deleteSelection()) event.preventDefault();
       return;
     }
 
@@ -63,7 +74,9 @@ export class CanvasShortcutsController {
           }
         } else if (tb?.isEditToolActive()) {
           const options = tb.editTools;
-          const currentIndex = options.findIndex((option) => option.id === this.canvas.activeTool());
+          const currentIndex = options.findIndex(
+            (option) => option.id === this.canvas.activeTool()
+          );
           const next = options[(currentIndex + 1 + options.length) % options.length];
           if (next) this.canvas.switchTools(next.id);
         } else if (tb?.isShapeToolActive()) {
@@ -100,7 +113,9 @@ export class CanvasShortcutsController {
           }
         } else if (tb?.isEditToolActive()) {
           const options = tb.editTools;
-          const currentIndex = options.findIndex((option) => option.id === this.canvas.activeTool());
+          const currentIndex = options.findIndex(
+            (option) => option.id === this.canvas.activeTool()
+          );
           const previous = options[(currentIndex - 1 + options.length) % options.length];
           if (previous) this.canvas.switchTools(previous.id);
         } else if (tb?.isShapeToolActive()) {

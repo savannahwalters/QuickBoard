@@ -310,6 +310,10 @@ export class CanvasComponent implements AfterViewInit, OnDestroy {
     this.toolbar()?.requestImageImport();
   }
 
+  public deleteSelection(): boolean {
+    return this.getActiveSelectionTool()?.deleteSelectedShapes() ?? false;
+  }
+
   public async copySelection(): Promise<void> {
     if (!this.lc) return;
     const tool = this.getActiveSelectionTool();

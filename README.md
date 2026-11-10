@@ -76,6 +76,10 @@ objects become cropped image pieces that can be selected and transformed indepen
 untouched objects keep their original geometry. A complete eraser stroke is one undo step.
 Object Eraser still removes entire objects.
 
+With the selection tool active, press Backspace (labelled Delete on Mac keyboards) or
+Delete to remove the selected objects. This removes whole objects, like Object Eraser,
+and can be undone in one step. Text fields keep their normal editing behavior.
+
 ## License
 
 AGPLv3

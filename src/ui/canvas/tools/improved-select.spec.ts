@@ -188,6 +188,47 @@ describe('selection interactions', () => {
     };
   }
 
+  it('deletes only selected objects in one undoable step and clears the handles', () => {
+    const h = setup();
+    const first = h.rectangle();
+    const untouched = h.rectangle(50, 50);
+    const last = h.rectangle(80, 80);
+    h.lc.shapes.push(first, untouched, last);
+    h.activate(h.objectTool);
+    h.objectTool.selectShapes([first, last], h.lc);
+    expect(h.objectTool.deleteSelectedShapes()).toBe(true);
+    expect(h.lc.shapes).toEqual([untouched]);
+    expect(h.objectTool.getSelectedShapes()).toEqual([]);
+    expect(h.overlays()).toEqual([]);
+    expect(h.actions).toHaveLength(1);
+    expect(h.objectTool.deleteSelectedShapes()).toBe(false);
+    expect(h.actions).toHaveLength(1);
+    h.actions[0].undo();
+    h.lc.trigger('drawingChange', {});
+    expect(h.lc.shapes).toEqual([first, untouched, last]);
+    expect(h.objectTool.getSelectedShapes()).toEqual([first, last]);
+    h.actions[0].do();
+    h.lc.trigger('drawingChange', {});
+    expect(h.lc.shapes).toEqual([untouched]);
+    expect(h.overlays()).toEqual([]);
+  });
+
+  it('deletes whole selected objects even when selected with a partial region', () => {
+    const h = setup();
+    const shape = h.rectangle();
+    h.lc.shapes.push(shape);
+    h.regionTool('rectangle');
+    h.lc.trigger('lc-pointerdown', { x: 110, y: 110 });
+    h.lc.trigger('lc-pointerup', { x: 190, y: 190 });
+    expect(getSelectionRegion(h.lc)).not.toBeNull();
+    expect(h.objectTool.deleteSelectedShapes()).toBe(true);
+    expect(h.lc.shapes).toEqual([]);
+    expect(getSelectionRegion(h.lc)).toBeNull();
+    h.actions[0].undo();
+    expect(h.lc.shapes).toEqual([shape]);
+    expect(getSelectionRegion(h.lc)).not.toBeNull();
+  });
+
   it.each([
     [100, 100],
     [-100, 100],

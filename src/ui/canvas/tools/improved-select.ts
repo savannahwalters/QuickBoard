@@ -148,6 +148,24 @@ export class ImprovedSelectShape implements LCTool {
     return this.selected;
   }
 
+  deleteSelectedShapes(): boolean {
+    this.commitGesture();
+    const selected = this.selected.filter((shape) => this.lc.shapes.includes(shape));
+    if (!selected.length) return false;
+    const before = captureSelection(this.lc, selected, getSelectionRegion(this.lc));
+    const removed = new Set(selected);
+    this.lc.shapes.splice(
+      0,
+      this.lc.shapes.length,
+      ...this.lc.shapes.filter((shape) => !removed.has(shape as Shape))
+    );
+    setSelectionRegion(this.lc, null);
+    this.setSelected([]);
+    this.lc.execute(new SelectionAction(this.lc, before, captureSelection(this.lc, [], null)));
+    this.lc.trigger('drawingChange', {});
+    return true;
+  }
+
   selectShapes(shapes: Shape[], lc: LCInstance): void {
     setSelectionRegion(lc, null);
     this.setSelected(shapes);
