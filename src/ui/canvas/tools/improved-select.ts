@@ -164,10 +164,12 @@ export class ImprovedSelectShape implements LCTool {
 
   getCopyShapes(): readonly Shape[] {
     const region = getSelectionRegion(this.lc);
+    const selected = new Set(region?.shapes ?? getSelection(this.lc));
+    const ordered = (this.lc.shapes as Shape[]).filter((shape) => selected.has(shape));
     if (region) {
-      return region.shapes.flatMap((shape) => regionPieces(shape, region, true, this.lc.shapes));
+      return ordered.flatMap((shape) => regionPieces(shape, region, true, this.lc.shapes));
     }
-    return this.selected.map((shape) => {
+    return ordered.map((shape) => {
       if (!legacyMasks(shape, this.lc.shapes).length) return shape;
       const bounds = getShapeBounds(shape);
       if (!bounds) throw new Error('Cannot copy masked artwork without bounds.');
@@ -364,10 +366,10 @@ export class ImprovedSelectShape implements LCTool {
   }
 
   private bakeLegacyArtwork(): void {
+    const region = getSelectionRegion(this.lc);
     const { shapes, replacements } = bakeLegacyMasks(this.lc.shapes);
     this.lc.shapes.splice(0, this.lc.shapes.length, ...shapes);
     this.selected = this.selected.map((shape) => replacements.get(shape) ?? shape);
-    const region = getSelectionRegion(this.lc);
     if (region) {
       setSelectionRegion(this.lc, {
         ...region,

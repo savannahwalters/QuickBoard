@@ -29,7 +29,7 @@ export class PixelEraser implements LCTool {
   private readonly rasters = new Map<unknown, EraserRaster>();
   private baked: ReturnType<typeof bakeLegacyMasks> | null = null;
 
-  constructor(private readonly lc: LCInstance) {}
+  constructor(private readonly lc: LCInstance, private readonly beforeErase?: () => void) {}
 
   didBecomeActive(): void {
     this.lc.setShapesInProgress([]);
@@ -38,6 +38,7 @@ export class PixelEraser implements LCTool {
 
   begin(x: number, y: number): void {
     this.finish();
+    this.beforeErase?.();
     this.before = captureSelection(this.lc, getSelection(this.lc), getSelectionRegion(this.lc));
     this.previous = { x, y };
     this.erase(this.previous, this.previous);
@@ -95,19 +96,20 @@ export class PixelEraser implements LCTool {
         };
         this.rasters.set(original, raster);
       }
+      this.baked ??= bakeLegacyMasks(this.before.shapes);
       if (!eraseRaster(raster.canvas, raster.bounds, start, end, this.strokeWidth)) continue;
       raster.preview ??= imageShape(raster.canvas, raster.bounds, true);
       changed = true;
     }
     if (changed) {
-      const baked = (this.baked ??= bakeLegacyMasks(this.before.shapes));
+      const baked = this.baked;
       this.lc.shapes.splice(
         0,
         this.lc.shapes.length,
         ...this.before.shapes.flatMap((original) => {
           const shape = original as Shape;
           if (shape['className'] === 'ErasedLinePath') return [];
-          return [this.rasters.get(shape)?.preview ?? baked.replacements.get(shape) ?? shape];
+          return [this.rasters.get(shape)?.preview ?? baked?.replacements.get(shape) ?? shape];
         })
       );
       this.lc.repaintLayer('main');

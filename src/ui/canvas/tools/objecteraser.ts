@@ -18,7 +18,7 @@ export class ObjectEraser implements LCTool {
   private before: SelectionSnapshot | null = null;
   private changed = false;
 
-  constructor(private readonly lc: LCInstance) {}
+  constructor(private readonly lc: LCInstance, private readonly beforeErase?: () => void) {}
 
   didBecomeActive(): void {
     this.hits.clear();
@@ -26,6 +26,7 @@ export class ObjectEraser implements LCTool {
 
   begin(x: number, y: number): void {
     this.finish();
+    this.beforeErase?.();
     this.hits.clear();
     this.before = captureSelection(this.lc, getSelection(this.lc), getSelectionRegion(this.lc));
     this.eraseAtPoint(x, y);

@@ -161,7 +161,7 @@ describe('selection clipboard', () => {
     });
     vi.mocked(navigator.clipboard.write).mockReturnValueOnce(pending);
     const first = writeCopiedImage(older, clipboardImage([1]));
-    await Promise.resolve();
+    await vi.waitFor(() => expect(navigator.clipboard.write).toHaveBeenCalledTimes(1));
     expect(navigator.clipboard.write).toHaveBeenCalledTimes(1);
     const newer = setCopiedShapes([]);
     const second = writeCopiedImage(newer, clipboardImage([2]));
@@ -181,5 +181,76 @@ describe('selection clipboard', () => {
     await writeCopiedImage(newer, clipboardImage([2]));
     expect(navigator.clipboard.write).toHaveBeenCalledTimes(2);
     expect(console.warn).toHaveBeenCalledOnce();
+  });
+
+  it.each(['text', 'image'])(
+    'waits for encoding and native writing before pasting over old %s',
+    async (oldContent) => {
+      const image = clipboardImage([1, 2]);
+      const generation = setupClipboard(image);
+      if (oldContent === 'text') vi.mocked(navigator.clipboard.read).mockResolvedValue([]);
+      let encode!: (blob: Blob) => void;
+      let finishWrite!: () => void;
+      const encoding = new Promise<Blob>((resolve) => {
+        encode = resolve;
+      });
+      const writing = new Promise<void>((resolve) => {
+        finishWrite = resolve;
+      });
+      vi.mocked(navigator.clipboard.write).mockReturnValue(writing);
+      const copy = writeCopiedImage(generation, encoding);
+      const paste = readSelectionClipboard();
+      await Promise.resolve();
+      expect(navigator.clipboard.read).not.toHaveBeenCalled();
+      encode(image);
+      await vi.waitFor(() => expect(navigator.clipboard.write).toHaveBeenCalledOnce());
+      expect(navigator.clipboard.read).not.toHaveBeenCalled();
+      vi.mocked(navigator.clipboard.read).mockResolvedValue([
+        { types: ['image/png'], getType: async () => image, presentationStyle: 'unspecified' },
+      ]);
+      finishWrite();
+      await copy;
+      expect(await paste).toHaveProperty('shapes');
+    }
+  );
+
+  it('waits for a replacement copy that starts while paste is waiting', async () => {
+    const image = clipboardImage([1]);
+    const generation = setupClipboard(image);
+    let encode!: (blob: Blob | null) => void;
+    const older = writeCopiedImage(
+      generation,
+      new Promise((resolve) => {
+        encode = resolve;
+      })
+    );
+    const paste = readSelectionClipboard();
+    const newerGeneration = setCopiedShapes([]);
+    let encodeNew!: (blob: Blob | null) => void;
+    const newer = writeCopiedImage(
+      newerGeneration,
+      new Promise((resolve) => {
+        encodeNew = resolve;
+      })
+    );
+    encode(image);
+    await older;
+    expect(navigator.clipboard.read).not.toHaveBeenCalled();
+    encodeNew(image);
+    await newer;
+    expect(await paste).toEqual({ shapes: [] });
+  });
+
+  it.each(['null', 'rejected'])('unblocks paste when encoding fails: %s', async (failure) => {
+    const image = clipboardImage([1]);
+    const generation = setupClipboard(image);
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const encoding =
+      failure === 'null' ? Promise.resolve(null) : Promise.reject(new Error('Encoding failed'));
+    await writeCopiedImage(generation, encoding);
+    expect(await readSelectionClipboard()).toEqual({ image });
+    expect(navigator.clipboard.write).not.toHaveBeenCalled();
+    expect(failure === 'null' ? console.error : console.warn).toHaveBeenCalledOnce();
   });
 });

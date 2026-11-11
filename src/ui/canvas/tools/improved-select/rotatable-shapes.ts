@@ -54,9 +54,8 @@ export function registerRotatableShapes(api: ShapeRegistry): void {
       ctx.strokeStyle = shape['strokeColor'] as string;
       ctx.lineWidth = shape['strokeWidth'] as number;
       if (name === 'Rectangle') {
-        const offset = (shape['strokeWidth'] as number) % 2 !== 0 ? 0.5 : 0;
-        ctx.fillRect(-width / 2 + offset, -height / 2 + offset, width, height);
-        ctx.strokeRect(-width / 2 + offset, -height / 2 + offset, width, height);
+        ctx.fillRect(-width / 2, -height / 2, width, height);
+        ctx.strokeRect(-width / 2, -height / 2, width, height);
       } else {
         ctx.beginPath();
         ctx.ellipse(0, 0, Math.abs(width / 2), Math.abs(height / 2), 0, 0, Math.PI * 2);

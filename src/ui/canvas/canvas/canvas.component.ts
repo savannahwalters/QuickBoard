@@ -333,12 +333,10 @@ export class CanvasComponent implements AfterViewInit, OnDestroy {
       scale: 1,
       includeWatermark: false,
     });
-    const blob = await new Promise<Blob | null>((resolve) => image.toBlob(resolve, 'image/png'));
-    if (!blob) {
-      console.error('Unable to render selected objects for the system clipboard.');
-      return;
-    }
-    await writeCopiedImage(generation, blob);
+    await writeCopiedImage(
+      generation,
+      new Promise<Blob | null>((resolve) => image.toBlob(resolve, 'image/png'))
+    );
   }
 
   public async pasteSelection(): Promise<void> {
@@ -495,7 +493,10 @@ export class CanvasComponent implements AfterViewInit, OnDestroy {
       new ImprovedSelectShape(this.lc, 'lasso', returnToObjectSelect)
     );
     this.toolInstances.set('pencil', new LC.tools.Pencil(this.lc));
-    this.toolInstances.set('eraser', new PixelEraser(this.lc));
+    const beforeErase = () => {
+      if (this.lc) this.canvasUndoRedo.markStrokeStart(this.lc);
+    };
+    this.toolInstances.set('eraser', new PixelEraser(this.lc, beforeErase));
     this.toolInstances.set('brush', new Brush(this.lc));
     this.toolInstances.set(
       'rectangle',
@@ -520,7 +521,7 @@ export class CanvasComponent implements AfterViewInit, OnDestroy {
       )
     );
 
-    this.toolInstances.set('object-eraser', new ObjectEraser(this.lc));
+    this.toolInstances.set('object-eraser', new ObjectEraser(this.lc, beforeErase));
 
     const brushTool = this.toolInstances.get('brush') as Brush | undefined;
     if (brushTool) {

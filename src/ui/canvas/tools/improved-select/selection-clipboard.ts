@@ -4,28 +4,50 @@ let copiedShapes: Record<string, unknown>[] = [];
 let copiedImage: Blob | null = null;
 let copyGeneration = 0;
 let clipboardWrite: Promise<void> = Promise.resolve();
+let latestCopy: Promise<void> = Promise.resolve();
 
 export function setCopiedShapes(shapes: Record<string, unknown>[]): number {
   copiedShapes = shapes;
   copiedImage = null;
+  latestCopy = Promise.resolve();
   return ++copyGeneration;
 }
 
-export function writeCopiedImage(generation: number, image: Blob): Promise<void> {
-  const write = clipboardWrite.then(async () => {
+export function writeCopiedImage(
+  generation: number,
+  image: Blob | Promise<Blob | null>
+): Promise<void> {
+  const copy = Promise.resolve(image).then(async (blob) => {
     if (generation !== copyGeneration) return;
-    await navigator.clipboard.write([new ClipboardItem({ 'image/png': image })]);
-    if (generation === copyGeneration) copiedImage = image;
+    if (!blob) {
+      console.error('Unable to render selected objects for the system clipboard.');
+      return;
+    }
+    const write = clipboardWrite.then(async () => {
+      if (generation !== copyGeneration) return;
+      await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+      if (generation === copyGeneration) copiedImage = blob;
+    });
+    clipboardWrite = write.catch((error) => {
+      console.warn('Unable to copy the selection to the system image clipboard.', error);
+    });
+    await clipboardWrite;
   });
-  clipboardWrite = write.catch((error) => {
-    console.warn('Unable to copy the selection to the system image clipboard.', error);
+  const completed = copy.catch((error) => {
+    console.warn('Unable to encode the selection for the system image clipboard.', error);
   });
-  return clipboardWrite;
+  if (generation === copyGeneration) latestCopy = completed;
+  return completed;
 }
 
 export async function readSelectionClipboard(): Promise<
   { shapes: Record<string, unknown>[] } | { image: Blob } | null
 > {
+  let pending: Promise<void>;
+  do {
+    pending = latestCopy;
+    await pending;
+  } while (pending !== latestCopy);
   const image = await readSystemImage();
   if (image === undefined) return { shapes: createPastedShapes() };
   if (!image) return null;

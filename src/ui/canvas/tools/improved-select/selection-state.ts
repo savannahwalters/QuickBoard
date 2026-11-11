@@ -12,7 +12,9 @@ const selections = new WeakMap<LCInstance, Record<string, unknown>[]>();
 const selectionRegions = new WeakMap<LCInstance, SelectionRegion>();
 
 export function getSelection(lc: LCInstance): Record<string, unknown>[] {
-  return selections.get(lc) ?? [];
+  const shapes = (selections.get(lc) ?? []).filter((shape) => lc.shapes.includes(shape));
+  selections.set(lc, shapes);
+  return shapes;
 }
 
 export function setSelection(lc: LCInstance, shapes: Record<string, unknown>[]): void {
@@ -20,7 +22,16 @@ export function setSelection(lc: LCInstance, shapes: Record<string, unknown>[]):
 }
 
 export function getSelectionRegion(lc: LCInstance): SelectionRegion | null {
-  return selectionRegions.get(lc) ?? null;
+  const region = selectionRegions.get(lc);
+  if (!region) return null;
+  const shapes = region.shapes.filter((shape) => lc.shapes.includes(shape));
+  if (!shapes.length) {
+    selectionRegions.delete(lc);
+    return null;
+  }
+  const current = shapes.length === region.shapes.length ? region : { ...region, shapes };
+  selectionRegions.set(lc, current);
+  return current;
 }
 
 export function setSelectionRegion(lc: LCInstance, region: SelectionRegion | null): void {

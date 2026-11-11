@@ -243,6 +243,34 @@ describe('pixel eraser strokes', () => {
     expect(lc.trigger).not.toHaveBeenCalled();
   });
 
+  it.each(['release', 'switch', 'new-stroke'])(
+    'cannot commit previews after legacy baking fails before %s',
+    (completion) => {
+      const { tool, lc, shape, untouched, actions } = setup();
+      const loadingImage = {
+        className: 'Image',
+        image: new Image(),
+        getBoundingRect: () => ({ x: 200, y: 200, width: 10, height: 10 }),
+      };
+      const mask = {
+        className: 'ErasedLinePath',
+        getBoundingRect: () => ({ x: 20, y: 0, width: 10, height: 30 }),
+      };
+      const scene = [shape, loadingImage, mask, untouched];
+      lc.shapes = [...scene];
+      expect(() => tool.begin(50, 15)).toThrow('Wait for board images to load');
+      if (completion === 'release') tool.end(50, 15);
+      else if (completion === 'switch') tool.willBecomeInactive();
+      else {
+        expect(() => tool.begin(50, 15)).toThrow('Wait for board images to load');
+        tool.end(50, 15);
+      }
+      expect(lc.shapes).toEqual(scene);
+      expect(actions).toHaveLength(0);
+      expect(lc.trigger).not.toHaveBeenCalled();
+    }
+  );
+
   it('does not render objects outside the eraser bounds', () => {
     const { tool, actions } = setup();
     tool.begin(150, 100);

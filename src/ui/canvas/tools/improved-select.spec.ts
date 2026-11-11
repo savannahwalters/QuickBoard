@@ -3,7 +3,11 @@ import type { LCInstance, ShapeRegistry } from '../literally-canvas-interfaces';
 import { ImprovedSelectShape } from './improved-select';
 import { getSelectionBounds, getShapeBounds } from './improved-select/geometry';
 import { registerImprovedSelectShapes } from './improved-select/register-shapes';
-import { getSelectionRegion } from './improved-select/selection-state';
+import {
+  getSelection,
+  getSelectionRegion,
+  setSelectionRegion,
+} from './improved-select/selection-state';
 
 type Shape = Record<string, unknown> & {
   getBoundingRect(): { x: number; y: number; width: number; height: number };
@@ -308,6 +312,107 @@ describe('selection interactions', () => {
     h.actions[0].undo();
     expect(shape).toMatchObject({ width: 100, height: 100 });
   });
+
+  it('copies overlapping objects in scene order rather than reverse selection order', () => {
+    const h = setup();
+    const back = h.rectangle();
+    const front = h.rectangle(80, 80);
+    h.lc.shapes.push(back, front);
+    h.activate(h.objectTool);
+    h.objectTool.selectShapes([front, back]);
+    const copied = h.objectTool.getCopyShapes();
+    expect(copied[0]).toBe(back);
+    expect(copied[1]).toBe(front);
+    setSelectionRegion(h.lc, {
+      shapes: [front, back],
+      mode: 'rectangle',
+      start: { x: 110, y: 110 },
+      end: { x: 190, y: 190 },
+      path: [],
+    });
+    h.api.renderSnapshotToImage.mockClear();
+    h.objectTool.getCopyShapes();
+    expect(h.api.renderSnapshotToImage.mock.calls.map(([snapshot]) => snapshot.shapes[0])).toEqual([
+      h.api.shapeToJSON(back),
+      h.api.shapeToJSON(front),
+    ]);
+  });
+
+  it('discards removed objects and regions when returning from another tool', () => {
+    const h = setup();
+    const removed = h.rectangle();
+    const surviving = h.rectangle();
+    h.lc.shapes.push(removed, surviving);
+    h.activate(h.objectTool);
+    h.objectTool.selectShapes([removed, surviving]);
+    setSelectionRegion(h.lc, {
+      shapes: [removed, surviving],
+      mode: 'rectangle',
+      start: { x: 110, y: 110 },
+      end: { x: 190, y: 190 },
+      path: [],
+    });
+    h.objectTool.willBecomeInactive(h.lc);
+    h.lc.shapes.splice(0, 1);
+    expect(getSelection(h.lc)).toEqual([surviving]);
+    expect(getSelectionRegion(h.lc)?.shapes).toEqual([surviving]);
+    h.lc.shapes.length = 0;
+    h.objectTool.didBecomeActive(h.lc);
+    expect(h.objectTool.getSelectedShapes()).toEqual([]);
+    expect(h.objectTool.getCopyShapes()).toEqual([]);
+    expect(getSelectionRegion(h.lc)).toBeNull();
+    expect(h.overlays()).toEqual([]);
+  });
+
+  it('retains the selection region while replacing legacy-masked source references', () => {
+    const h = setup();
+    const artwork = h.rectangle();
+    const mask = {
+      className: 'ErasedLinePath',
+      getBoundingRect: () => ({ x: 140, y: 100, width: 10, height: 100 }),
+    };
+    h.lc.shapes.push(artwork, mask);
+    h.activate(h.objectTool);
+    h.objectTool.selectShapes([artwork]);
+    setSelectionRegion(h.lc, {
+      shapes: [artwork],
+      mode: 'rectangle',
+      start: { x: 110, y: 110 },
+      end: { x: 150, y: 190 },
+      path: [],
+    });
+    expect(h.objectTool.deleteSelectedShapes()).toBe(true);
+    expect(h.lc.shapes.length).toBeGreaterThan(0);
+    expect(h.lc.shapes).not.toContain(mask);
+    h.actions[0].undo();
+    expect(h.lc.shapes).toEqual([artwork, mask]);
+    expect(getSelectionRegion(h.lc)?.shapes).toEqual([artwork]);
+  });
+
+  it.each([1, 3, 5])(
+    'renders odd-width rectangles without shifting beyond reported bounds: %s',
+    (strokeWidth) => {
+      const h = setup();
+      const shape = Object.assign(h.rectangle(), { strokeWidth });
+      const ctx = {
+        save: vi.fn(),
+        restore: vi.fn(),
+        translate: vi.fn(),
+        rotate: vi.fn(),
+        fillRect: vi.fn(),
+        strokeRect: vi.fn(),
+      };
+      h.renderers.get('Rectangle')!(ctx as unknown as CanvasRenderingContext2D, shape, vi.fn());
+      expect(ctx.fillRect).toHaveBeenCalledWith(-50, -50, 100, 100);
+      expect(ctx.strokeRect).toHaveBeenCalledWith(-50, -50, 100, 100);
+      expect(getShapeBounds(shape)).toEqual({
+        x: 100 - strokeWidth / 2,
+        y: 100 - strokeWidth / 2,
+        width: 100 + strokeWidth,
+        height: 100 + strokeWidth,
+      });
+    }
+  );
 
   it('unlinks corner scaling immediately when Shift is pressed during a drag', () => {
     const h = setup();
