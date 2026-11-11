@@ -43,7 +43,7 @@ export class App implements OnInit, OnDestroy {
   protected readonly isCanvasFullscreen = signal(false);
   protected readonly saveService = inject(SaveService);
   protected readonly dialogMode = signal<'about' | 'settings' | 'shortcuts' | null>(null);
-  private readonly canvas = viewChild(CanvasComponent);
+  protected readonly canvas = viewChild(CanvasComponent);
   private readonly el = inject(ElementRef);
   private readonly themeService = inject(ThemeService);
   private readonly windowScalingService = inject(WindowScalingService);
@@ -59,6 +59,7 @@ export class App implements OnInit, OnDestroy {
   private readonly shortcuts = inject(AppShortcutsService);
   private removeThemeListener?: () => void;
   private removeShortcutListener?: () => void | undefined;
+  private removeImportImageListener?: () => void;
   private removeWindowScalingListener?: () => void;
   private removeExportIpcListeners?: () => void;
 
@@ -69,6 +70,7 @@ export class App implements OnInit, OnDestroy {
       {
         flushCurrentBoardState: (force) => this.canvas()?.flushCurrentBoardState(force),
         prepareForProjectLoad: () => this.canvas()?.prepareForProjectLoad(),
+        requestImageImport: () => this.canvas()?.requestImageImport(),
       },
       (dialog) => {
         if (dialog === 'about') {
@@ -95,10 +97,14 @@ export class App implements OnInit, OnDestroy {
     if (window.quickboard?.onShortcut) {
       this.removeShortcutListener = window.quickboard.onShortcut((option: string) => {
         const target = document.activeElement as HTMLElement | null;
+        const sharedEditorHistory =
+          (option === 'undo' || option === 'redo') && !!target?.closest('#editorjs');
         if (
+          !sharedEditorHistory &&
           target &&
-          !target.closest('#editorjs') &&
-          (target.matches('input, textarea, select') || target.isContentEditable)
+          (target.matches('input, textarea, select') ||
+            target.isContentEditable ||
+            !!target.closest('[contenteditable="true"], #editorjs'))
         ) {
           document.execCommand(option);
           return;
@@ -110,9 +116,20 @@ export class App implements OnInit, OnDestroy {
           case 'redo':
             this.undoRedo.triggerRedo();
             break;
+          case 'copy':
+            void this.canvas()?.copySelection();
+            break;
+          case 'paste':
+            void this.canvas()?.pasteSelection();
+            break;
           default:
             break;
         }
+      });
+    }
+    if (window.quickboard?.onImportImage) {
+      this.removeImportImageListener = window.quickboard.onImportImage(() => {
+        this.canvas()?.requestImageImport();
       });
     }
 
@@ -209,6 +226,7 @@ export class App implements OnInit, OnDestroy {
     this.iosIntegration.destroy();
     this.removeThemeListener?.();
     this.removeShortcutListener?.();
+    this.removeImportImageListener?.();
     this.removeWindowScalingListener?.();
     this.removeExportIpcListeners?.();
   }

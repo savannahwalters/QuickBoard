@@ -30,6 +30,7 @@ export class WebToolbarComponent {
 
   readonly activeMenu = signal<string | null>(null);
   readonly openMobileAbout = output<void>();
+  readonly importImage = output<void>();
   readonly isElectron = !!window.quickboard;
   readonly currentTheme = this.themeService.currentTheme;
 

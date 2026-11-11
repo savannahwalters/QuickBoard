@@ -11,6 +11,9 @@ interface LinePathLikeShape {
   points: Point[];
   spacing?: number;
   addPoint(point: Point): void;
+  getBoundingRect?(): { x: number; y: number; width: number; height: number };
+  move?(moveInfo?: { xDiff?: number; yDiff?: number }): void;
+  setUpperLeft?(position: { x: number; y: number }): void;
 }
 
 interface ExtendedLCAPI {
@@ -92,6 +95,20 @@ export function ensureSquareBrushShapeRegistered(): void {
     addPoint(this: LinePathLikeShape, point: Point) {
       this.points.push(point);
     },
+    move(this: LinePathLikeShape, moveInfo: { xDiff?: number; yDiff?: number } = {}) {
+      for (const point of this.points) {
+        point.x -= moveInfo.xDiff ?? 0;
+        point.y -= moveInfo.yDiff ?? 0;
+      }
+    },
+    setUpperLeft(this: LinePathLikeShape, position: { x: number; y: number }) {
+      const bounds = this.getBoundingRect?.();
+      if (!bounds) return;
+      this.move?.({
+        xDiff: bounds.x - position.x,
+        yDiff: bounds.y - position.y,
+      });
+    },
     getBoundingRect(this: LinePathLikeShape) {
       if (this.points.length === 0) {
         return { x: 0, y: 0, width: 0, height: 0 };
@@ -119,7 +136,9 @@ export function ensureSquareBrushShapeRegistered(): void {
       }
 
       const first = points[0];
-      const sharedStyle = points.every((point) => point.size === first.size && point.color === first.color);
+      const sharedStyle = points.every(
+        (point) => point.size === first.size && point.color === first.color
+      );
 
       if (sharedStyle) {
         return {
@@ -168,9 +187,13 @@ export function ensureSquareBrushShapeRegistered(): void {
     },
   });
 
-  lcAPI.defineCanvasRenderer(SQUARE_LINE_PATH_CLASS, drawSquareLinePath, (_ctx, bufferCtx, shape) => {
-    drawSquareLinePath(bufferCtx, shape);
-  });
+  lcAPI.defineCanvasRenderer(
+    SQUARE_LINE_PATH_CLASS,
+    drawSquareLinePath,
+    (_ctx, bufferCtx, shape) => {
+      drawSquareLinePath(bufferCtx, shape);
+    }
+  );
 
   lcAPI.defineSVGRenderer(SQUARE_LINE_PATH_CLASS, (shape) => {
     const points = shape.points;
@@ -181,7 +204,9 @@ export function ensureSquareBrushShapeRegistered(): void {
     if (points.length === 1) {
       const size = Math.max(1, points[0].size);
       const half = size / 2;
-      return `<rect x='${points[0].x - half}' y='${points[0].y - half}' width='${size}' height='${size}' fill='${points[0].color}' />`;
+      return `<rect x='${points[0].x - half}' y='${
+        points[0].y - half
+      }' width='${size}' height='${size}' fill='${points[0].color}' />`;
     }
 
     const segments = [] as string[];
@@ -189,7 +214,9 @@ export function ensureSquareBrushShapeRegistered(): void {
       const a = points[i - 1];
       const b = points[i];
       segments.push(
-        `<line x1='${a.x}' y1='${a.y}' x2='${b.x}' y2='${b.y}' stroke='${a.color}' stroke-width='${Math.max(1, a.size)}' stroke-linecap='square' stroke-linejoin='miter' />`
+        `<line x1='${a.x}' y1='${a.y}' x2='${b.x}' y2='${b.y}' stroke='${
+          a.color
+        }' stroke-width='${Math.max(1, a.size)}' stroke-linecap='square' stroke-linejoin='miter' />`
       );
     }
 
@@ -197,7 +224,9 @@ export function ensureSquareBrushShapeRegistered(): void {
     const lastSize = Math.max(1, last.size);
     const lastHalf = lastSize / 2;
     segments.push(
-      `<rect x='${last.x - lastHalf}' y='${last.y - lastHalf}' width='${lastSize}' height='${lastSize}' fill='${last.color}' />`
+      `<rect x='${last.x - lastHalf}' y='${
+        last.y - lastHalf
+      }' width='${lastSize}' height='${lastSize}' fill='${last.color}' />`
     );
 
     return `<g>${segments.join('')}</g>`;
@@ -313,5 +342,4 @@ export class Brush {
       lc.repaintLayer('main');
     }
   }
-
 }

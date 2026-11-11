@@ -1,4 +1,4 @@
-import { DOCUMENT } from '@angular/common';
+import { DOCUMENT, NgTemplateOutlet } from '@angular/common';
 import {
   ChangeDetectionStrategy,
   Component,
@@ -16,11 +16,14 @@ type ToolGroupKey = 'draw' | 'shape' | 'erase' | 'edit';
 type ToolOption = Readonly<{
   id: string;
   label: string;
-  icon: string;
+  icon?: string;
+  iconPath?: string;
+  iconPathLength?: number;
 }>;
 
 @Component({
   selector: 'app-tools-bar',
+  imports: [NgTemplateOutlet],
   templateUrl: './tools-bar.component.html',
   styleUrls: ['./tools-bar.component.css'],
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -49,14 +52,37 @@ export class ToolsBarComponent implements OnDestroy {
     { id: 'object-eraser', label: 'Object Eraser', icon: '🧹' },
   ];
   readonly editTools: readonly ToolOption[] = [
-    { id: 'select', label: 'Select', icon: '👆' },
-    { id: 'image', label: 'Image', icon: '🖼️' },
+    {
+      id: 'rectangle-select',
+      label: 'Rectangle Select',
+      iconPath: 'M4 4H20V20H4Z',
+      iconPathLength: 64,
+    },
+    {
+      id: 'circle-select',
+      label: 'Circle Select',
+      iconPath: 'M12 3A9 9 0 1 1 12 21A9 9 0 1 1 12 3Z',
+      iconPathLength: 60,
+    },
+    {
+      id: 'polygon-select',
+      label: 'Polygon Select',
+      iconPath: 'M3 9L8 6L11 10L18 3L22 16L12 21L8 15L3 16Z',
+    },
+    {
+      id: 'lasso-select',
+      label: 'Lasso Select',
+      iconPath:
+        'M7 16C4 15 3 12 4 9C6 6 9 6 12 4C16 1 21 4 21 8C22 13 17 16 10 16C8 16 7 15 7 16C7 20 9 23 11 21',
+    },
   ];
 
   readonly selectedDrawTool = signal<'pencil' | 'brush'>('pencil');
   readonly selectedShape = signal<'rectangle' | 'circle' | 'polygon'>('rectangle');
   readonly selectedEraserTool = signal<'eraser' | 'object-eraser'>('eraser');
-  readonly selectedEditTool = signal<'select' | 'image'>('select');
+  readonly selectedEditTool = signal<
+    'rectangle-select' | 'circle-select' | 'polygon-select' | 'lasso-select'
+  >('rectangle-select');
   readonly openToolSubmenu = signal<ToolGroupKey | null>(null);
   readonly toolSubmenuTop = signal(0);
 
@@ -73,7 +99,7 @@ export class ToolsBarComponent implements OnDestroy {
     if (group === 'draw') return 'Draw tools';
     if (group === 'shape') return 'Shape tools';
     if (group === 'erase') return 'Eraser tools';
-    if (group === 'edit') return 'Edit tools';
+    if (group === 'edit') return 'Selection tools';
     return '';
   });
   readonly activeSubmenuSelectedId = computed(() => {
@@ -233,6 +259,12 @@ export class ToolsBarComponent implements OnDestroy {
     this.toolSelected.emit(this.getSelectedToolForGroup(group));
   }
 
+  public onObjectSelectClick(): void {
+    this.hideTooltip();
+    this.closeToolSubmenu();
+    this.toolSelected.emit('select');
+  }
+
   public onActiveSubmenuSelect(toolId: string): void {
     const group = this.openToolSubmenu();
     if (!group) {
@@ -261,20 +293,6 @@ export class ToolsBarComponent implements OnDestroy {
     }
 
     if (group === 'edit' && this.isEditTool(toolId)) {
-      if (toolId === 'image') {
-        const input = this.document.createElement('input');
-        input.type = 'file';
-        input.accept = 'image/*';
-        input.onchange = (e: Event) => {
-          const target = e.target as HTMLInputElement;
-          if (target.files && target.files.length > 0) {
-            this.imageSelected.emit(target.files[0]);
-          }
-        };
-        input.click();
-        this.closeToolSubmenu();
-        return;
-      }
       this.selectedEditTool.set(toolId);
       this.closeToolSubmenu();
       this.toolSelected.emit(toolId);
@@ -284,6 +302,47 @@ export class ToolsBarComponent implements OnDestroy {
   public requestClearCanvas(): void {
     this.hideTooltip();
     this.clearCanvasRequested.emit();
+  }
+
+  public requestImageImport(): void {
+    if (window.quickboard?.pickImageFile) {
+      void this.importDesktopImage();
+      return;
+    }
+    const input = this.document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/*';
+    input.style.position = 'fixed';
+    input.style.left = '-10000px';
+    input.style.opacity = '0';
+    const cleanup = () => input.remove();
+    input.addEventListener(
+      'change',
+      () => {
+        const file = input.files?.[0];
+        cleanup();
+        if (file) this.imageSelected.emit(file);
+      },
+      { once: true }
+    );
+    input.addEventListener('cancel', cleanup, { once: true });
+    this.document.body.appendChild(input);
+    input.click();
+  }
+
+  private async importDesktopImage(): Promise<void> {
+    try {
+      const result = await window.quickboard!.pickImageFile();
+      if (!result.success) throw new Error(result.message);
+      if (result.cancelled) return;
+      const bytes = Uint8Array.from(atob(result.data), (character) => character.charCodeAt(0));
+      this.imageSelected.emit(new File([bytes], result.name, { type: result.type }));
+    } catch (error) {
+      console.error('Image import failed:', error);
+      window.alert(
+        'Failed to import image: ' + (error instanceof Error ? error.message : String(error))
+      );
+    }
   }
 
   public toggleCanvasFullscreen(): void {
@@ -354,8 +413,15 @@ export class ToolsBarComponent implements OnDestroy {
     return toolId === 'rectangle' || toolId === 'circle' || toolId === 'polygon';
   }
 
-  private isEditTool(toolId: string): toolId is 'select' | 'image' {
-    return toolId === 'select' || toolId === 'image';
+  private isEditTool(
+    toolId: string
+  ): toolId is 'rectangle-select' | 'circle-select' | 'polygon-select' | 'lasso-select' {
+    return (
+      toolId === 'rectangle-select' ||
+      toolId === 'circle-select' ||
+      toolId === 'polygon-select' ||
+      toolId === 'lasso-select'
+    );
   }
 
   private getSelectedToolForGroup(group: ToolGroupKey): string {

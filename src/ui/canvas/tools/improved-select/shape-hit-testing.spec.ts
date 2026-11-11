@@ -1,0 +1,157 @@
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { renderShape, ShapeHitTesting } from './shape-hit-testing';
+import { getShapeBounds } from './geometry';
+
+describe('renderer-based selection hit testing', () => {
+  it('includes the full width and end caps of native LC lines when rasterizing', () => {
+    expect(
+      getShapeBounds({
+        className: 'Line',
+        x1: 240,
+        y1: 90,
+        x2: 40,
+        y2: 90,
+        strokeWidth: 12,
+        getBoundingRect: () => ({ x: 34, y: 84, width: 206, height: 6 }),
+      })
+    ).toEqual({ x: 34, y: 84, width: 212, height: 12 });
+  });
+
+  it('includes rotated rectangle stroke corners in raster bounds', () => {
+    const bounds = getShapeBounds({
+      className: 'Rectangle',
+      x: 0,
+      y: 0,
+      width: 100,
+      height: 50,
+      strokeWidth: 10,
+      rotation: Math.PI / 4,
+      getBoundingRect: () => ({}),
+    });
+    expect(bounds?.width).toBeCloseTo(170 / Math.sqrt(2));
+    expect(bounds?.height).toBeCloseTo(170 / Math.sqrt(2));
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
+  function setup() {
+    const render = vi.fn((snapshot) => {
+      const pixels = new Uint8ClampedArray(20 * 20 * 4);
+      for (const [x, y] of snapshot.shapes[0].pixels) pixels[(y * 20 + x) * 4 + 3] = 255;
+      for (const mask of snapshot.shapes.slice(1)) {
+        for (const [x, y] of mask.pixels) pixels[(y * 20 + x) * 4 + 3] = 0;
+      }
+      return {
+        width: 20,
+        height: 20,
+        getContext: () => ({ getImageData: () => ({ data: pixels }) }),
+      };
+    });
+    vi.stubGlobal('LC', { shapeToJSON: (shape: unknown) => shape, renderSnapshotToImage: render });
+    const shape = (className: string, pixels: number[][]) => ({
+      className,
+      pixels,
+      getBoundingRect: () => ({ x: 0, y: 0, width: 20, height: 20 }),
+    });
+    const scene: Record<string, unknown>[] = [];
+    return { hits: new ShapeHitTesting(() => scene), shape, render, scene };
+  }
+
+  it('lets clicks pass through transparent fill pixels to strokes below', () => {
+    const { hits, shape } = setup();
+    const stroke = shape('LinePath', [[5, 5]]);
+    const fill = shape('Image', [[15, 15]]);
+    expect(hits.hit([stroke, fill], { x: 5, y: 5 }, 0)).toBe(stroke);
+    expect(hits.hit([stroke, fill], { x: 15, y: 15 }, 0)).toBe(fill);
+    expect(hits.hit([stroke, fill], { x: 10, y: 10 }, 0)).toBeNull();
+  });
+
+  it('selects every overlapping object independently rather than only the topmost one', () => {
+    const { hits, shape } = setup();
+    const stroke = shape('LinePath', [[5, 5]]);
+    const fill = shape('Image', [[5, 5]]);
+    for (const object of [stroke, fill]) {
+      expect(hits.intersects(object, { x: 0, y: 0 }, { x: 10, y: 10 }, 'rectangle', [])).toBe(true);
+    }
+    expect(hits.hit([stroke, fill], { x: 5, y: 5 }, 0)).toBe(fill);
+  });
+
+  it('does not skip a one-pixel stroke or select an empty bounding-box corner', () => {
+    const { hits, shape } = setup();
+    const stroke = shape('LinePath', [[19, 19]]);
+    expect(hits.intersects(stroke, { x: 18, y: 18 }, { x: 20, y: 20 }, 'rectangle', [])).toBe(true);
+    expect(hits.intersects(stroke, { x: 0, y: 0 }, { x: 5, y: 5 }, 'rectangle', [])).toBe(false);
+  });
+
+  it.each(['rectangle', 'circle', 'polygon', 'lasso'] as const)(
+    'rejects distant %s marquees before rendering or allocating pixel buffers',
+    (mode) => {
+      const { hits, shape, render } = setup();
+      const object = shape('FutureShape', [[5, 5]]);
+      expect(hits.intersects(object, { x: 100, y: 100 }, { x: 200, y: 200 }, mode, [])).toBe(false);
+      expect(hits.intersects(object, { x: -100, y: -100 }, { x: -200, y: -200 }, mode, [])).toBe(
+        false
+      );
+      expect(render).not.toHaveBeenCalled();
+    }
+  );
+
+  it('rejects boundary-only overlap but still picks thin strokes with reversed endpoints', () => {
+    const { hits, shape, render } = setup();
+    const object = shape('LinePath', [[5, 5]]);
+    expect(hits.intersects(object, { x: 20, y: 0 }, { x: 30, y: 10 }, 'rectangle', [])).toBe(false);
+    expect(render).not.toHaveBeenCalled();
+    expect(hits.intersects(object, { x: 10, y: 10 }, { x: 0, y: 0 }, 'rectangle', [])).toBe(true);
+    expect(render).toHaveBeenCalledOnce();
+  });
+
+  it('automatically supports future shape renderers without class-name hit-testing branches', () => {
+    const { hits, shape } = setup();
+    const future = shape('NewPluginShape', [[5, 5]]);
+    expect(hits.hit([future], { x: 5, y: 5 }, 0)).toBe(future);
+    expect(hits.intersects(future, { x: 0, y: 0 }, { x: 10, y: 10 }, 'circle', [])).toBe(true);
+  });
+
+  it('caches raster reads until drawing changes invalidate them', () => {
+    const { hits, shape, render } = setup();
+    const stroke = shape('LinePath', [[5, 5]]);
+    hits.hit([stroke], { x: 5, y: 5 }, 0);
+    hits.hit([stroke], { x: 5, y: 5 }, 0);
+    expect(render).toHaveBeenCalledOnce();
+    hits.clear();
+    hits.hit([stroke], { x: 5, y: 5 }, 0);
+    expect(render).toHaveBeenCalledTimes(2);
+  });
+
+  it('bounds fill selection controls by opaque content rather than transparent image margins', () => {
+    const { hits, shape } = setup();
+    const fill = shape('Image', [
+      [5, 6],
+      [8, 9],
+    ]);
+    expect(hits.visibleBounds(fill)).toEqual({ x: 5, y: 6, width: 4, height: 4 });
+    expect(hits.visibleBounds(shape('Image', []))).toBeNull();
+  });
+
+  it('applies only later legacy eraser masks to picking and marquee membership', () => {
+    const { hits, shape, scene } = setup();
+    const earlierMask = shape('ErasedLinePath', [[5, 5]]);
+    const artwork = shape('LinePath', [
+      [5, 5],
+      [8, 8],
+    ]);
+    const laterMask = shape('ErasedLinePath', [[8, 8]]);
+    const newArtwork = shape('NewPluginShape', [[8, 8]]);
+    scene.push(earlierMask, artwork, laterMask, newArtwork);
+    expect(hits.hit(scene, { x: 5, y: 5 }, 0)).toBe(artwork);
+    expect(hits.hit([artwork], { x: 8, y: 8 }, 0)).toBeNull();
+    expect(hits.hit(scene, { x: 8, y: 8 }, 0)).toBe(newArtwork);
+    expect(hits.intersects(artwork, { x: 7, y: 7 }, { x: 10, y: 10 }, 'rectangle', [])).toBe(false);
+    expect(hits.intersects(laterMask, { x: 0, y: 0 }, { x: 20, y: 20 }, 'rectangle', [])).toBe(
+      false
+    );
+    const raster = renderShape(artwork, getShapeBounds(artwork)!, scene);
+    const pixels = raster.getContext('2d')!.getImageData(0, 0, 20, 20).data;
+    expect(pixels[(5 * 20 + 5) * 4 + 3]).toBe(255);
+    expect(pixels[(8 * 20 + 8) * 4 + 3]).toBe(0);
+  });
+});

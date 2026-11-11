@@ -28,8 +28,19 @@ import { ToolsBarComponent } from '../tools-bar/tools-bar.component';
 import { CanvasUndoRedoService } from '../undo-redo/canvas-undo-redo.service';
 import { Brush, ensureSquareBrushShapeRegistered } from '../../canvas/tools/brush';
 import { ObjectEraser } from '../../canvas/tools/objecteraser';
+import { PixelEraser } from '../tools/pixel-eraser';
 import { BucketFill } from '../tools/bucketfill';
-import { ImprovedSelectShape, registerImprovedSelectShapes } from '../tools/improved-select';
+import { ConstrainedShapeTool } from '../tools/constrained-shape';
+import { ImprovedSelectShape } from '../tools/improved-select';
+import { registerImprovedSelectShapes } from '../tools/improved-select/register-shapes';
+import {
+  readSelectionClipboard,
+  writeCopiedImage,
+  setCopiedShapes,
+} from '../tools/improved-select/selection-clipboard';
+import { getSelectionBounds } from '../tools/improved-select/geometry';
+import { captureSelection, SelectionAction } from '../tools/improved-select/selection-action';
+import { getSelection, getSelectionRegion } from '../tools/improved-select/selection-state';
 import { ZoomTool } from '../tools/zoom';
 import { LCInstance, LCTool } from '../literally-canvas-interfaces';
 import { CanvasViewportController } from './canvas-viewport-controller';
@@ -154,31 +165,7 @@ export class CanvasComponent implements AfterViewInit, OnDestroy {
       const canvasDataChanged = this.canvasPersistence.hasCanvasDataChanged(currentBoardData);
 
       // Only reload when switching boards or when the canvas data reference changes
-      if (boardIdChanged) {
-        if (this.currentBoardId && this.lc && this._canvasDirty) {
-          const snapshot = this.lc.getSnapshot();
-          this.canvasDataService.setCanvasData(this.currentBoardId, {
-            shapes: [...this.lc.shapes],
-            backgroundShapes: [...this.lc.backgroundShapes],
-            snapshot,
-          });
-        }
-
-        // Ensure any deferred preview for the outgoing board is committed before switching.
-        this.canvasPersistence.flushPendingPreviewRegeneration(this.lc, this.currentBoardId);
-        // Save current board data before switching
-        if (this.currentBoardId && this.lc) {
-          this.canvasPersistence.persistCurrentBoardData(
-            this.lc,
-            this.currentBoardId,
-            this.currentBoardId,
-            true
-          );
-          this.store.updateBackgroundColor(this.currentBoardId, this.lc.getColor('background'));
-          this._canvasDirty = false;
-        }
-        this.loadBoardData(selectedBoardId);
-      } else if (canvasDataChanged) {
+      if (boardIdChanged || canvasDataChanged) {
         this.loadBoardData(selectedBoardId);
       }
     });
@@ -280,7 +267,101 @@ export class CanvasComponent implements AfterViewInit, OnDestroy {
     if (!this.shortcutsEnabled()) {
       return;
     }
+    if ((event.metaKey || event.ctrlKey) && !event.altKey) {
+      const target = event.target as HTMLElement | null;
+      if (
+        target &&
+        (target.matches('input, textarea, select') ||
+          target.isContentEditable ||
+          target.closest('[contenteditable="true"]'))
+      ) {
+        return;
+      }
+      if (event.key.toLowerCase() === 'c') {
+        event.preventDefault();
+        void this.copySelection();
+        return;
+      }
+      if (event.key.toLowerCase() === 'v') {
+        event.preventDefault();
+        void this.pasteSelection();
+        return;
+      }
+    }
     this.shortcutsController.handleKeyDown(event);
+  }
+
+  public requestImageImport(): void {
+    this.toolbar()?.requestImageImport();
+  }
+
+  public deleteSelection(): boolean {
+    return (
+      this.getActiveSelectionTool()?.deleteSelectedShapes(() => {
+        if (this.lc) this.canvasUndoRedo.markStrokeStart(this.lc);
+      }) ?? false
+    );
+  }
+
+  public async copySelection(): Promise<void> {
+    if (!this.lc) return;
+    const tool = this.getActiveSelectionTool();
+    const selection = tool?.getCopyShapes() ?? [];
+    if (!selection.length) return;
+
+    const serialized = selection.map((shape) => LC.shapeToJSON(shape));
+    const generation = setCopiedShapes(serialized);
+
+    const bounds = getSelectionBounds(selection);
+
+    if (
+      !navigator.clipboard?.write ||
+      typeof ClipboardItem === 'undefined' ||
+      !LC.renderSnapshotToImage ||
+      !Object.values(bounds).every(Number.isFinite) ||
+      bounds.width <= 0 ||
+      bounds.height <= 0
+    ) {
+      return;
+    }
+    const snapshot = this.lc.getSnapshot();
+    snapshot['shapes'] = serialized;
+    snapshot['backgroundShapes'] = [];
+    snapshot['colors'] = { background: 'transparent' };
+    const image = LC.renderSnapshotToImage(snapshot, {
+      rect: bounds,
+      scale: 1,
+      includeWatermark: false,
+    });
+    await writeCopiedImage(
+      generation,
+      new Promise<Blob | null>((resolve) => image.toBlob(resolve, 'image/png'))
+    );
+  }
+
+  public async pasteSelection(): Promise<void> {
+    if (!this.lc) return;
+    const lc = this.lc;
+    const boardId = this.currentBoardId;
+    const content = await readSelectionClipboard();
+    if (!content) return;
+    if (this.lc !== lc || this.currentBoardId !== boardId) {
+      console.warn('Paste cancelled because the destination board changed.');
+      return;
+    }
+    if ('shapes' in content) {
+      const pasted = content.shapes;
+      if (!pasted.length) return;
+      this.setTool('select');
+      this.canvasUndoRedo.markStrokeStart(lc);
+      const before = captureSelection(lc, getSelection(lc), getSelectionRegion(lc));
+      lc.shapes.push(...pasted);
+      this.getActiveSelectionTool()?.selectShapes(pasted);
+      lc.execute(new SelectionAction(lc, before, captureSelection(lc, pasted, null)));
+      lc.trigger('drawingChange', {});
+      return;
+    }
+    this.handleImageFile(new File([content.image], 'clipboard-image', { type: content.image.type }));
   }
 
   private initializeCanvas(): void {
@@ -296,8 +377,7 @@ export class CanvasComponent implements AfterViewInit, OnDestroy {
       this.currentBoardId = currentBoard.id;
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    registerImprovedSelectShapes(LC as any);
+    registerImprovedSelectShapes(LC);
 
     // Initialize Literally Canvas — container is already at the correct size
     this.lc = LC.init(container, {
@@ -395,21 +475,43 @@ export class CanvasComponent implements AfterViewInit, OnDestroy {
 
     // Initialize tool instances
     this.toolInstances.set('select', new ImprovedSelectShape(this.lc));
+    const returnToObjectSelect = () => this.setTool('select');
+    this.toolInstances.set(
+      'rectangle-select',
+      new ImprovedSelectShape(this.lc, 'rectangle', returnToObjectSelect)
+    );
+    this.toolInstances.set(
+      'circle-select',
+      new ImprovedSelectShape(this.lc, 'circle', returnToObjectSelect)
+    );
+    this.toolInstances.set(
+      'polygon-select',
+      new ImprovedSelectShape(this.lc, 'polygon', returnToObjectSelect)
+    );
+    this.toolInstances.set(
+      'lasso-select',
+      new ImprovedSelectShape(this.lc, 'lasso', returnToObjectSelect)
+    );
     this.toolInstances.set('pencil', new LC.tools.Pencil(this.lc));
-    this.toolInstances.set('eraser', new LC.tools.Eraser(this.lc));
-    this.toolInstances.set('brush', new Brush(this.lc));
-    this.toolInstances.set('rectangle', new LC.tools.Rectangle(this.lc));
-    this.toolInstances.set('circle', new LC.tools.Ellipse(this.lc));
-    // Use the built-in LC polygon tool when available.
-    const shapeTools = LC.tools as {
-      Polygon?: new (lc: LCInstance) => LCTool;
-      Triangle?: new (lc: LCInstance) => LCTool;
+    const beforeErase = () => {
+      if (this.lc) this.canvasUndoRedo.markStrokeStart(this.lc);
     };
-    const PolygonTool = shapeTools.Polygon ?? shapeTools.Triangle;
+    this.toolInstances.set('eraser', new PixelEraser(this.lc, beforeErase));
+    this.toolInstances.set('brush', new Brush(this.lc));
+    this.toolInstances.set(
+      'rectangle',
+      new ConstrainedShapeTool(this.lc, new LC.tools.Rectangle(this.lc))
+    );
+    this.toolInstances.set(
+      'circle',
+      new ConstrainedShapeTool(this.lc, new LC.tools.Ellipse(this.lc))
+    );
+    // Use the built-in LC polygon tool when available.
+    const PolygonTool = LC.tools.Polygon ?? LC.tools.Triangle;
     if (PolygonTool) {
       this.toolInstances.set('polygon', new PolygonTool(this.lc));
     }
-    this.toolInstances.set('bucket-fill', new BucketFill(this.lc));
+    this.toolInstances.set('bucket-fill', new BucketFill());
     this.toolInstances.set(
       'zoom',
       new ZoomTool(
@@ -419,18 +521,7 @@ export class CanvasComponent implements AfterViewInit, OnDestroy {
       )
     );
 
-    const objectEraser = this.canvasUndoRedo.instrumentObjectEraser(
-      new ObjectEraser(this.lc),
-      (id, include, options) =>
-        this.canvasPersistence.persistCurrentBoardData(
-          this.lc,
-          id,
-          this.currentBoardId,
-          include,
-          options
-        )
-    );
-    this.toolInstances.set('object-eraser', objectEraser);
+    this.toolInstances.set('object-eraser', new ObjectEraser(this.lc, beforeErase));
 
     const brushTool = this.toolInstances.get('brush') as Brush | undefined;
     if (brushTool) {
@@ -454,6 +545,28 @@ export class CanvasComponent implements AfterViewInit, OnDestroy {
   private loadBoardData(boardId: string) {
     if (!this.lc) return;
 
+    // Commit against the outgoing scene before its objects, history or board ID change.
+    const activeTool = this.lc.tool;
+    activeTool.willBecomeInactive?.(this.lc);
+    this.lc.isDragging = false;
+    if (this.currentBoardId && this.currentBoardId !== boardId) {
+      if (this._canvasDirty) {
+        this.canvasDataService.setCanvasData(this.currentBoardId, {
+          shapes: [...this.lc.shapes],
+          backgroundShapes: [...this.lc.backgroundShapes],
+          snapshot: this.lc.getSnapshot(),
+        });
+      }
+      this.canvasPersistence.flushPendingPreviewRegeneration(this.lc, this.currentBoardId);
+      this.canvasPersistence.persistCurrentBoardData(
+        this.lc,
+        this.currentBoardId,
+        this.currentBoardId,
+        true
+      );
+      this.store.updateBackgroundColor(this.currentBoardId, this.lc.getColor('background'));
+    }
+
     ensureSquareBrushShapeRegistered();
 
     const boards = this.store.boards();
@@ -464,10 +577,8 @@ export class CanvasComponent implements AfterViewInit, OnDestroy {
 
     this.canvasUndoRedo.beginBoardLoad();
 
-    const selectTool = this.toolInstances.get('select') as ImprovedSelectShape;
-    if (selectTool && typeof selectTool.clearSelection === 'function') {
-      selectTool.clearSelection(this.lc);
-    }
+    const selectTool = this.toolInstances.get('select');
+    if (selectTool instanceof ImprovedSelectShape) selectTool.clearSelection();
 
     // Clear canvas
     this.lc.shapes = [];
@@ -509,6 +620,7 @@ export class CanvasComponent implements AfterViewInit, OnDestroy {
     this.onionSkin.pruneToCurrentAndNeighbors(boardId);
 
     this.canvasUndoRedo.finishBoardLoad(this.lc);
+    activeTool.didBecomeActive?.(this.lc);
   }
 
   public flushCurrentBoardState(includePreviews = true): void {
@@ -683,6 +795,15 @@ export class CanvasComponent implements AfterViewInit, OnDestroy {
       this.lc.setTool(tool);
       this.activeTool.set(toolId);
     }
+  }
+
+  private getActiveSelectionTool(): ImprovedSelectShape | undefined {
+    const tool = this.toolInstances.get(this.activeTool());
+    return tool instanceof ImprovedSelectShape ? tool : undefined;
+  }
+
+  public containsElement(element: Element): boolean {
+    return this.el.nativeElement.contains(element);
   }
 
   public setCanvasZoomLevel(level: number): void {
@@ -876,12 +997,26 @@ export class CanvasComponent implements AfterViewInit, OnDestroy {
   public handleImageFile(file: File): void {
     if (!this.lc) return;
 
+    const lc = this.lc;
+    const boardId = this.currentBoardId;
+    const reportError = (error: unknown) => {
+      console.error('Image import failed:', error);
+      window.alert(
+        `Failed to import image "${file.name}": ` +
+          (error instanceof Error ? error.message : 'The file could not be read.')
+      );
+    };
     const reader = new FileReader();
+    reader.onerror = () => reportError(reader.error);
     reader.onload = (e) => {
       const src = e.target?.result as string;
       const img = new Image();
+      img.onerror = () => reportError(new Error('The image could not be decoded.'));
       img.onload = () => {
-        if (!this.lc) return;
+        if (this.lc !== lc || this.currentBoardId !== boardId) {
+          reportError(new Error('The destination board changed while loading the image.'));
+          return;
+        }
 
         const defaultWidth = img.width;
         const defaultHeight = img.height;
@@ -890,11 +1025,11 @@ export class CanvasComponent implements AfterViewInit, OnDestroy {
         // Find center of canvas
         const centerX =
           this.lc.canvas.width / 2 / (this.lc.scale * backingScale) -
-          this.lc.position.x / backingScale -
+          this.lc.position.x / (this.lc.scale * backingScale) -
           defaultWidth / 2;
         const centerY =
           this.lc.canvas.height / 2 / (this.lc.scale * backingScale) -
-          this.lc.position.y / backingScale -
+          this.lc.position.y / (this.lc.scale * backingScale) -
           defaultHeight / 2;
 
         // LC.createShape requires image: Image object
@@ -905,8 +1040,10 @@ export class CanvasComponent implements AfterViewInit, OnDestroy {
           scale: 1,
         });
 
-        this.lc.saveShape(imageShape);
         this.setTool('select');
+        this.canvasUndoRedo.markStrokeStart(this.lc);
+        this.lc.saveShape(imageShape);
+        this.getActiveSelectionTool()?.selectShapes([imageShape as Record<string, unknown>]);
       };
       img.src = src;
     };

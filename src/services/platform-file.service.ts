@@ -329,24 +329,4 @@ export class PlatformFileService {
     URL.revokeObjectURL(url);
     return true;
   }
-
-  private readFileAsBase64(file: File): Promise<string> {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => {
-        if (typeof reader.result !== 'string') {
-          reject(new Error('Failed to read file as base64.'));
-          return;
-        }
-        const commaIndex = reader.result.indexOf(',');
-        if (commaIndex === -1) {
-          reject(new Error('Invalid data URL format.'));
-          return;
-        }
-        resolve(reader.result.slice(commaIndex + 1));
-      };
-      reader.onerror = () => reject(reader.error ?? new Error('File read error.'));
-      reader.readAsDataURL(file);
-    });
-  }
 }

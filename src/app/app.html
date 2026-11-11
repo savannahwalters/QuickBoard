@@ -6,7 +6,10 @@
 >
   <!-- Non-Electron Toolbar -->
   @if (showWebToolbar) {
-  <app-web-toolbar (openMobileAbout)="openMobileAbout()" />
+  <app-web-toolbar
+    (openMobileAbout)="openMobileAbout()"
+    (importImage)="canvas()?.requestImageImport()"
+  />
   }
 
   <div class="save-toast" [class.visible]="saveService.saveStatus()">

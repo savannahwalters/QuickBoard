@@ -1,57 +1,81 @@
-export function getGlobalPoint(shape: Record<string, unknown>, nx: number, ny: number) {
-  const sw =
-    ((shape['cropWidth'] as number) ||
-      (shape['image'] ? (shape['image'] as HTMLImageElement).width : 0)) *
-    (shape['scale'] as number);
-  const sh =
-    ((shape['cropHeight'] as number) ||
-      (shape['image'] ? (shape['image'] as HTMLImageElement).height : 0)) *
-    (shape['scale'] as number);
-  const rot = (shape['rotation'] as number) || 0;
-  const cx = (shape['x'] as number) + sw / 2;
-  const cy = (shape['y'] as number) + sh / 2;
-  const lx = (nx - 0.5) * sw;
-  const ly = (ny - 0.5) * sh;
+export interface SelectionBounds {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export function getShapeBounds(shape: Record<string, unknown>): SelectionBounds | null {
+  if (typeof shape['getBoundingRect'] !== 'function') return null;
+  if (shape['className'] === 'Line') {
+    // LC's Line bounds omit half the stroke at the right and bottom edges.
+    const x1 = shape['x1'] as number;
+    const y1 = shape['y1'] as number;
+    const x2 = shape['x2'] as number;
+    const y2 = shape['y2'] as number;
+    const stroke = (shape['strokeWidth'] as number) || 0;
+    return {
+      x: Math.min(x1, x2) - stroke / 2,
+      y: Math.min(y1, y2) - stroke / 2,
+      width: Math.abs(x2 - x1) + stroke,
+      height: Math.abs(y2 - y1) + stroke,
+    };
+  }
+  if (shape['className'] === 'Rectangle' || shape['className'] === 'Ellipse') {
+    const x = shape['x'] as number;
+    const y = shape['y'] as number;
+    const width = shape['width'] as number;
+    const height = shape['height'] as number;
+    const stroke = (shape['strokeWidth'] as number) || 0;
+    const rotation = (shape['rotation'] as number) || 0;
+    if (rotation) {
+      const cos = Math.cos(rotation);
+      const sin = Math.sin(rotation);
+      const rotatedWidth =
+        shape['className'] === 'Ellipse'
+          ? Math.hypot(width * cos, height * sin) + stroke
+          : (Math.abs(width) + stroke) * Math.abs(cos) +
+            (Math.abs(height) + stroke) * Math.abs(sin);
+      const rotatedHeight =
+        shape['className'] === 'Ellipse'
+          ? Math.hypot(width * sin, height * cos) + stroke
+          : (Math.abs(width) + stroke) * Math.abs(sin) +
+            (Math.abs(height) + stroke) * Math.abs(cos);
+      return {
+        x: x + width / 2 - rotatedWidth / 2,
+        y: y + height / 2 - rotatedHeight / 2,
+        width: rotatedWidth,
+        height: rotatedHeight,
+      };
+    }
+    return {
+      x: Math.min(x, x + width) - stroke / 2,
+      y: Math.min(y, y + height) - stroke / 2,
+      width: Math.abs(width) + stroke,
+      height: Math.abs(height) + stroke,
+    };
+  }
+  const bounds = (shape['getBoundingRect'] as () => SelectionBounds).call(shape);
   return {
-    x: cx + Math.cos(rot) * lx - Math.sin(rot) * ly,
-    y: cy + Math.sin(rot) * lx + Math.cos(rot) * ly,
+    x: Math.min(bounds.x, bounds.x + bounds.width),
+    y: Math.min(bounds.y, bounds.y + bounds.height),
+    width: Math.abs(bounds.width),
+    height: Math.abs(bounds.height),
   };
 }
 
-export function setGlobalPointAnchor(
-  shape: Record<string, unknown>,
-  nx: number,
-  ny: number,
-  targetG: { x: number; y: number },
-) {
-  const sw =
-    ((shape['cropWidth'] as number) ||
-      (shape['image'] ? (shape['image'] as HTMLImageElement).width : 0)) *
-    (shape['scale'] as number);
-  const sh =
-    ((shape['cropHeight'] as number) ||
-      (shape['image'] ? (shape['image'] as HTMLImageElement).height : 0)) *
-    (shape['scale'] as number);
-  const rot = (shape['rotation'] as number) || 0;
-  const lx = (nx - 0.5) * sw;
-  const ly = (ny - 0.5) * sh;
-  shape['x'] = targetG.x - sw / 2 - Math.cos(rot) * lx + Math.sin(rot) * ly;
-  shape['y'] = targetG.y - sh / 2 - Math.sin(rot) * lx - Math.cos(rot) * ly;
-}
-
-export function ptToLocal(gx: number, gy: number, shape: Record<string, unknown>) {
-  const sw =
-    ((shape['cropWidth'] as number) ||
-      (shape['image'] ? (shape['image'] as HTMLImageElement).width : 0)) *
-    (shape['scale'] as number);
-  const sh =
-    ((shape['cropHeight'] as number) ||
-      (shape['image'] ? (shape['image'] as HTMLImageElement).height : 0)) *
-    (shape['scale'] as number);
-  const dx = gx - ((shape['x'] as number) + sw / 2);
-  const dy = gy - ((shape['y'] as number) + sh / 2);
-  const rot = -((shape['rotation'] as number) || 0);
-  const cos = Math.cos(rot);
-  const sin = Math.sin(rot);
-  return { lx: dx * cos - dy * sin + sw / 2, ly: dx * sin + dy * cos + sh / 2, sw, sh };
+export function getSelectionBounds(shapes: readonly Record<string, unknown>[]): SelectionBounds {
+  const bounds = shapes.flatMap((shape) => {
+    const rect = getShapeBounds(shape);
+    return rect ? [rect] : [];
+  });
+  if (!bounds.length) return { x: 0, y: 0, width: 0, height: 0 };
+  const x = Math.min(...bounds.map((rect) => rect.x));
+  const y = Math.min(...bounds.map((rect) => rect.y));
+  return {
+    x,
+    y,
+    width: Math.max(...bounds.map((rect) => rect.x + rect.width)) - x,
+    height: Math.max(...bounds.map((rect) => rect.y + rect.height)) - y,
+  };
 }

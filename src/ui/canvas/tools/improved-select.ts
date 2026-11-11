@@ -1,614 +1,599 @@
-import { LCInstance, LCTool } from '../literally-canvas-interfaces';
-import { getResizeCursorForAngle, getRotateCursor } from './improved-select/cursors';
-import { getGlobalPoint, ptToLocal, setGlobalPointAnchor } from './improved-select/geometry';
-import { registerImprovedSelectShapes } from './improved-select/register-shapes';
-import { TransformAction } from './improved-select/transform-action';
-import { ImageHandleMode } from './improved-select/types';
+import type { LCInstance, LCTool } from '../literally-canvas-interfaces';
+import { constrainSquare } from './drag-geometry';
+import {
+  getSelectionBounds,
+  getShapeBounds,
+  type SelectionBounds,
+} from './improved-select/geometry';
+import { hitSelectionHandle, type GroupHandle } from './improved-select/selection-handles';
+import { pointInSelection, type SelectionMode } from './improved-select/selection-geometry';
+import { legacyMasks, renderShape, ShapeHitTesting } from './improved-select/shape-hit-testing';
+import { bakeLegacyMasks, imageShape, regionPieces } from './improved-select/selection-raster';
+import {
+  captureSelection,
+  SelectionAction,
+  type SelectionSnapshot,
+} from './improved-select/selection-action';
+import {
+  resizeShapes,
+  rotateShapes,
+  restoreShapes,
+  snapshotShapes,
+  translateShapes,
+  prepareTransform,
+  type ShapeSnapshots,
+} from './improved-select/shape-transforms';
+import {
+  getSelection,
+  getSelectionRegion,
+  setSelection,
+  setSelectionRegion,
+  type SelectionRegion,
+} from './improved-select/selection-state';
 
-export { registerImprovedSelectShapes };
+type Shape = Record<string, unknown>;
+interface Point {
+  x: number;
+  y: number;
+}
+interface Gesture {
+  mode: 'move' | GroupHandle;
+  start: Point;
+  point: Point;
+  bounds: SelectionBounds;
+  before: SelectionSnapshot;
+  states: ShapeSnapshots;
+  crop: boolean;
+  stretchStates: ShapeSnapshots | null;
+  changed: boolean;
+  prepared: boolean;
+  scene: unknown[] | null;
+}
 
+/**
+ * All selectors share renderer-based picking, screen-sized handles, and snapshot undo.
+ * Middle handles stretch; Shift-middle handles crop the selected group as one region.
+ * Corner handles scale uniformly unless Shift is currently held.
+ * New shape types participate through LC bounds/serialization/rendering; transforms
+ * without a native geometry adapter use an undoable raster conversion.
+ */
 export class ImprovedSelectShape implements LCTool {
   name = 'SelectShape';
   iconName = 'select';
   usesSimpleAPI = false;
+  private readonly hits = new ShapeHitTesting(() => this.lc.shapes);
+  private unsubscribers: (() => void)[] = [];
+  private selected: Shape[] = [];
+  private shift = false;
+  private start: Point = { x: 0, y: 0 };
+  private selectionEnd: Point = { x: 0, y: 0 };
+  private rawSelectionEnd: Point = { x: 0, y: 0 };
+  private path: Point[] = [];
+  private preview: Point | null = null;
+  private marquee = false;
+  private additive = false;
+  private gesture: Gesture | null = null;
+  private previews = new WeakMap<SelectionRegion, Shape[]>();
 
-  private readonly selectCanvas = document.createElement('canvas');
-  private readonly selectCtx = this.selectCanvas.getContext('2d', { willReadFrequently: true });
-  private _selectShapeUnsubscribe: (() => void) | null = null;
-  private selectedShape: Record<string, unknown> | null = null;
-  private dragOffset = { x: 0, y: 0 };
-  private initialPosition = { x: 0, y: 0 };
-  private initialScale = 1;
-  private initialRotation = 0;
-  private initialCrop = { x: 0, y: 0, w: 0, h: 0 };
-  private dragMode: ImageHandleMode = null;
-  private didDrag = false;
-  private readonly handlePad = 18;
-  private readonly onCanvasPointerMove = (event: PointerEvent) =>
-    this.updateCursorFromPointer(event);
-
-  constructor(private readonly lc: LCInstance) {
-    this.selectCanvas.style.backgroundColor = 'transparent';
-  }
-
-  willBecomeActive(): void {
-    // Empty
-  }
+  constructor(
+    private readonly lc: LCInstance,
+    private readonly selectionMode: 'object' | SelectionMode = 'object',
+    private readonly onRegionSelectionComplete?: () => void
+  ) {}
 
   didBecomeActive(lc: LCInstance): void {
-    const unsub1 = lc.on('lc-pointerdown', (e: unknown) =>
-      this.onDown(e as { x: number; y: number }, lc),
-    );
-    const unsub2 = lc.on('lc-pointerdrag', (e: unknown) =>
-      this.onDrag(e as { x: number; y: number }, lc),
-    );
-    const unsub3 = lc.on('lc-pointerup', (e: unknown) =>
-      this.onUp(e as { x: number; y: number }, lc),
-    );
-    const unsub4 = lc.on('drawingChange', () => this._drawSelectCanvas(lc));
-    this._selectShapeUnsubscribe = () => {
-      if (typeof unsub1 === 'function') (unsub1 as () => void)();
-      if (typeof unsub2 === 'function') (unsub2 as () => void)();
-      if (typeof unsub3 === 'function') (unsub3 as () => void)();
-      if (typeof unsub4 === 'function') (unsub4 as () => void)();
-      lc.canvas.removeEventListener('pointermove', this.onCanvasPointerMove);
+    this.selected = getSelection(lc);
+    this.listen('lc-pointerdown', (point) => this.down(point as Point));
+    this.listen('lc-pointerdrag', (point) => this.drag(point as Point));
+    this.listen('lc-pointerup', (point) => this.up(point as Point));
+    this.listen('zoom', () => this.overlay());
+    this.listen('lc-pointermove', (point) => {
+      if (this.selectionMode === 'polygon' && this.marquee) {
+        this.preview = point as Point;
+        this.overlay();
+      }
+    });
+    this.listen('drawingChange', () => {
+      this.hits.clear();
+      this.previews = new WeakMap();
+      this.selected = getSelection(lc).filter((shape) => lc.shapes.includes(shape));
+      setSelection(lc, this.selected);
+      this.overlay();
+    });
+    const pointerDown = (event: PointerEvent) => {
+      this.shift = event.shiftKey;
     };
-    lc.canvas.addEventListener('pointermove', this.onCanvasPointerMove);
-    this.setCursor('default');
-    this._drawSelectCanvas(lc);
+    const updateShift = (shift: boolean) => {
+      if (this.shift === shift) return;
+      this.shift = shift;
+      if (this.marquee && this.hasAspectConstraint()) {
+        this.updateSelectionEnd(this.rawSelectionEnd);
+        this.overlay();
+      } else if (this.gesture && this.isCorner(this.gesture.mode)) {
+        this.drag(this.gesture.point);
+      }
+    };
+    const key = (event: KeyboardEvent) => updateShift(event.shiftKey);
+    const blur = () => updateShift(false);
+    const hover = (event: PointerEvent) => {
+      if (this.gesture || this.marquee) return;
+      const rect = lc.canvas.getBoundingClientRect();
+      const point = {
+        x: (event.clientX - rect.left - lc.position.x / lc.backingScale) / lc.scale,
+        y: (event.clientY - rect.top - lc.position.y / lc.backingScale) / lc.scale,
+      };
+      lc.canvas.style.cursor = this.cursor(this.handle(point));
+    };
+    lc.canvas.addEventListener('pointerdown', pointerDown, true);
+    lc.canvas.addEventListener('pointermove', hover);
+    window.addEventListener('keydown', key);
+    window.addEventListener('keyup', key);
+    window.addEventListener('blur', blur);
+    this.unsubscribers.push(() => {
+      lc.canvas.removeEventListener('pointerdown', pointerDown, true);
+      lc.canvas.removeEventListener('pointermove', hover);
+      window.removeEventListener('keydown', key);
+      window.removeEventListener('keyup', key);
+      window.removeEventListener('blur', blur);
+    });
+    this.overlay();
   }
 
   willBecomeInactive(lc: LCInstance): void {
-    if (this._selectShapeUnsubscribe) this._selectShapeUnsubscribe();
-    lc.canvas.removeEventListener('pointermove', this.onCanvasPointerMove);
-    this.setCursor('default');
+    this.commitGesture();
+    this.unsubscribers.splice(0).forEach((unsubscribe) => unsubscribe());
+    this.gesture = null;
+    this.marquee = false;
+    this.path = [];
+    this.preview = null;
+    this.shift = false;
+    this.hits.clear();
     lc.setShapesInProgress([]);
-    this.selectedShape = null;
+    lc.repaintLayer('main');
+    lc.canvas.style.cursor = 'default';
   }
 
-  didBecomeInactive(): void {
-    // Empty
+  private listen(event: string, handler: (data: unknown) => void): void {
+    const unsubscribe = this.lc.on(event, handler);
+    if (unsubscribe) this.unsubscribers.push(unsubscribe);
   }
 
-  public clearSelection(lc: LCInstance): void {
-    if (this.selectedShape) {
-      this.selectedShape = null;
-      this.dragMode = null;
-      this.setCursor('default');
-      lc.trigger('shapeSelected', { selectedShape: null });
-      lc.setShapesInProgress([]);
-      lc.repaintLayer('main');
+  getSelectedShapes(): readonly Shape[] {
+    return this.selected;
+  }
+
+  getCopyShapes(): readonly Shape[] {
+    const region = getSelectionRegion(this.lc);
+    const selected = new Set(region?.shapes ?? getSelection(this.lc));
+    const ordered = (this.lc.shapes as Shape[]).filter((shape) => selected.has(shape));
+    if (region) {
+      return ordered.flatMap((shape) => regionPieces(shape, region, true, this.lc.shapes));
     }
+    return ordered.map((shape) => {
+      if (!legacyMasks(shape, this.lc.shapes).length) return shape;
+      const bounds = getShapeBounds(shape);
+      if (!bounds) throw new Error('Cannot copy masked artwork without bounds.');
+      return imageShape(renderShape(shape, bounds, this.lc.shapes), bounds);
+    });
   }
 
-  private onDown(e: { x: number; y: number }, lc: LCInstance): void {
-    this.didDrag = false;
+  deleteSelectedShapes(beforeDelete?: () => void): boolean {
+    this.commitGesture();
+    const selected = this.selected.filter((shape) => this.lc.shapes.includes(shape));
+    if (!selected.length) return false;
+    beforeDelete?.();
+    let region = getSelectionRegion(this.lc);
+    const before = captureSelection(this.lc, selected, region);
+    if (region) {
+      this.bakeLegacyArtwork();
+      region = getSelectionRegion(this.lc);
+    }
+    const removed = new Set(this.selected);
+    const remaining = (this.lc.shapes as Shape[]).flatMap((shape) => {
+      if (!removed.has(shape)) return [shape];
+      return region ? regionPieces(shape, region, false, this.lc.shapes) : [];
+    });
+    this.lc.shapes.splice(0, this.lc.shapes.length, ...remaining);
+    setSelectionRegion(this.lc, null);
+    this.setSelected([]);
+    this.lc.execute(new SelectionAction(this.lc, before, captureSelection(this.lc, [], null)));
+    this.lc.trigger('drawingChange', {});
+    return true;
+  }
 
-    if (
-      this.selectedShape &&
-      this.selectedShape['className'] === 'Image' &&
-      this.selectedShape['image']
-    ) {
-      const sw =
-        ((this.selectedShape['cropWidth'] as number) ||
-          (this.selectedShape['image'] as HTMLImageElement).width) *
-        (this.selectedShape['scale'] as number);
-      const sh =
-        ((this.selectedShape['cropHeight'] as number) ||
-          (this.selectedShape['image'] as HTMLImageElement).height) *
-        (this.selectedShape['scale'] as number);
-      const { lx, ly } = ptToLocal(e.x, e.y, this.selectedShape);
+  selectShapes(shapes: Shape[]): void {
+    setSelectionRegion(this.lc, null);
+    this.setSelected(shapes);
+  }
 
-      this.dragMode = this.getImageHandleMode(lx, ly, sw, sh);
+  clearSelection(): void {
+    this.commitGesture();
+    this.marquee = false;
+    this.path = [];
+    this.preview = null;
+    setSelectionRegion(this.lc, null);
+    this.setSelected([]);
+  }
 
-      if (this.dragMode) {
-        this.saveInitialState();
-        this.setCursor(this.getCursorForMode(this.dragMode, this.selectedShape));
-        if (this.dragMode === 'move') {
-          const cx = (this.selectedShape['x'] as number) + sw / 2;
-          const cy = (this.selectedShape['y'] as number) + sh / 2;
-          this.dragOffset = { x: e.x - cx, y: e.y - cy };
-        }
+  private setSelected(shapes: Shape[]): void {
+    this.selected = shapes;
+    setSelection(this.lc, shapes);
+    this.lc.trigger('shapeSelected', { selectedShape: shapes.at(-1) ?? null });
+    this.overlay();
+  }
+
+  private unit(): number {
+    return 1 / (this.lc.scale || 1);
+  }
+
+  private transformShapes(): Shape[] {
+    const region = getSelectionRegion(this.lc);
+    if (!region)
+      return this.selected.map((shape) => {
+        // Fill images can contain canvas-sized transparent margins.
+        if (shape['className'] !== 'Image') return shape;
+        const bounds = this.hits.visibleBounds(shape) ?? getShapeBounds(shape);
+        return bounds ? { getBoundingRect: () => bounds } : shape;
+      });
+    let shapes = this.previews.get(region);
+    if (!shapes) {
+      shapes = region.shapes.flatMap((shape) => regionPieces(shape, region, true, this.lc.shapes));
+      this.previews.set(region, shapes);
+    }
+    return shapes;
+  }
+
+  private handle(point: Point): GroupHandle | null {
+    return this.selected.length
+      ? hitSelectionHandle(getSelectionBounds(this.transformShapes()), point, this.unit())
+      : null;
+  }
+
+  private cursor(mode: GroupHandle | null): string {
+    if (!mode) return 'default';
+    if (mode === 'group-rotate') return 'pointer';
+    if (mode === 'group-l' || mode === 'group-r') return 'ew-resize';
+    if (mode === 'group-t' || mode === 'group-b') return 'ns-resize';
+    return mode === 'group-tl' || mode === 'group-br' ? 'nwse-resize' : 'nesw-resize';
+  }
+
+  private down(point: Point): void {
+    if (this.selectionMode !== 'object') {
+      if (this.selectionMode !== 'polygon' || !this.marquee) {
+        this.start = { ...point };
+        this.updateSelectionEnd(point);
+        this.path = [];
+        setSelectionRegion(this.lc, null);
+        this.setSelected([]);
+      }
+      this.marquee = true;
+      this.preview = { ...point };
+      if (this.selectionMode === 'lasso') this.path = [{ ...point }];
+      this.overlay();
+      return;
+    }
+    const handle = this.handle(point);
+    if (handle) {
+      this.beginGesture(point, handle);
+      return;
+    }
+    // Image interiors must not consume Shift-clicks that toggle selection membership.
+    if (this.shift) {
+      const hit = this.hits.hit(this.lc.shapes as Shape[], point, 3 * this.unit());
+      if (hit) {
+        setSelectionRegion(this.lc, null);
+        this.setSelected(
+          this.selected.includes(hit)
+            ? this.selected.filter((s) => s !== hit)
+            : [...this.selected, hit]
+        );
         return;
       }
     }
-
-    this.dragMode = null;
-    const shapeIndex = this.selectCtx ? this._getPixel(e.x, e.y, lc, this.selectCtx) : null;
-
-    if (shapeIndex !== null && lc.shapes[shapeIndex]) {
-      this.selectedShape = lc.shapes[shapeIndex] as Record<string, unknown>;
-      lc.trigger('shapeSelected', { selectedShape: this.selectedShape });
-
-      if (typeof this.selectedShape['getBoundingRect'] === 'function') {
-        const br = (this.selectedShape['getBoundingRect'] as () => { x: number; y: number })();
-        this.dragOffset = { x: e.x - br.x, y: e.y - br.y };
-      }
-
-      this.saveInitialState();
-
-      if (this.selectedShape['className'] === 'Image') {
-        const sw =
-          ((this.selectedShape['cropWidth'] as number) ||
-            (this.selectedShape['image'] as HTMLImageElement).width) *
-          (this.selectedShape['scale'] as number);
-        const sh =
-          ((this.selectedShape['cropHeight'] as number) ||
-            (this.selectedShape['image'] as HTMLImageElement).height) *
-          (this.selectedShape['scale'] as number);
-        const cx = (this.selectedShape['x'] as number) + sw / 2;
-        const cy = (this.selectedShape['y'] as number) + sh / 2;
-        this.dragOffset = { x: e.x - cx, y: e.y - cy };
-      }
-      this.dragMode = 'move';
-      this.setCursor(this.getCursorForMode('move', this.selectedShape));
-      this.updateSelectionOverlay(lc);
-    } else {
-      this.selectedShape = null;
-      this.setCursor('default');
-      lc.trigger('shapeSelected', { selectedShape: null });
-      lc.setShapesInProgress([]);
-      lc.repaintLayer('main');
-    }
-  }
-
-  private saveInitialState(): void {
-    if (!this.selectedShape) return;
-    this.initialPosition = this.getShapePosition(this.selectedShape);
-    this.initialScale = (this.selectedShape['scale'] as number) || 1;
-    this.initialRotation = (this.selectedShape['rotation'] as number) || 0;
-    this.initialCrop = {
-      x: (this.selectedShape['cropX'] as number) || 0,
-      y: (this.selectedShape['cropY'] as number) || 0,
-      w:
-        (this.selectedShape['cropWidth'] as number) ||
-        (this.selectedShape['image'] ? (this.selectedShape['image'] as HTMLImageElement).width : 0),
-      h:
-        (this.selectedShape['cropHeight'] as number) ||
-        (this.selectedShape['image']
-          ? (this.selectedShape['image'] as HTMLImageElement).height
-          : 0),
-    };
-  }
-
-  private updateSelectionOverlay(lc: LCInstance): void {
-    if (!this.selectedShape) {
-      lc.setShapesInProgress([]);
-    } else if (this.selectedShape['className'] === 'Image') {
-      const LCglobal = (window as unknown as Record<string, unknown>)['LC'] as Record<
-        string,
-        unknown
-      >;
-      const overlay = (
-        LCglobal['createShape'] as (n: string, a: Record<string, unknown>) => unknown
-      )('ImageSelectionOverlay', {
-        shape: this.selectedShape,
-      });
-      lc.setShapesInProgress([overlay]);
-    } else {
-      const LCglobal = (window as unknown as Record<string, unknown>)['LC'] as Record<
-        string,
-        unknown
-      >;
-      const overlay = (
-        LCglobal['createShape'] as (n: string, a: Record<string, unknown>) => unknown
-      )('SelectionBox', {
-        shape: this.selectedShape,
-        handleSize: 0,
-      });
-      lc.setShapesInProgress([overlay]);
-    }
-    lc.repaintLayer('main');
-  }
-
-  private onDrag(e: { x: number; y: number }, lc: LCInstance): void {
-    if (!this.selectedShape || !this.dragMode) return;
-    this.didDrag = true;
-
-    if (this.dragMode === 'move') {
-      if (this.selectedShape['className'] === 'Image') {
-        const sw =
-          ((this.selectedShape['cropWidth'] as number) ||
-            (this.selectedShape['image'] as HTMLImageElement).width) *
-          (this.selectedShape['scale'] as number);
-        const sh =
-          ((this.selectedShape['cropHeight'] as number) ||
-            (this.selectedShape['image'] as HTMLImageElement).height) *
-          (this.selectedShape['scale'] as number);
-
-        this.selectedShape['x'] = e.x - this.dragOffset.x - sw / 2;
-        this.selectedShape['y'] = e.y - this.dragOffset.y - sh / 2;
-      } else {
-        if (typeof this.selectedShape['setUpperLeft'] === 'function') {
-          (this.selectedShape['setUpperLeft'] as (pos: { x: number; y: number }) => void).call(
-            this.selectedShape,
-            {
-              x: e.x - this.dragOffset.x,
-              y: e.y - this.dragOffset.y,
-            },
-          );
-        } else {
-          this.selectedShape['x'] = e.x - this.dragOffset.x;
-          this.selectedShape['y'] = e.y - this.dragOffset.y;
-        }
-      }
-    } else if (this.selectedShape['className'] === 'Image' && this.selectedShape['image']) {
-      const baseW =
-        (this.selectedShape['cropWidth'] as number) ||
-        (this.selectedShape['image'] as HTMLImageElement).width;
-      const baseH =
-        (this.selectedShape['cropHeight'] as number) ||
-        (this.selectedShape['image'] as HTMLImageElement).height;
-      const cos = Math.cos(-(this.selectedShape['rotation'] as number) || 0);
-      const sin = Math.sin(-(this.selectedShape['rotation'] as number) || 0);
-
-      if (this.dragMode === 'rotate') {
-        const anchorG = getGlobalPoint(this.selectedShape, 0.5, 0.5);
-        const angle = Math.atan2(e.y - anchorG.y, e.x - anchorG.x);
-        this.selectedShape['rotation'] = angle + Math.PI / 2;
-        setGlobalPointAnchor(this.selectedShape, 0.5, 0.5, anchorG);
-      } else if (this.dragMode === 'br') {
-        const anchorG = getGlobalPoint(this.selectedShape, 0, 0);
-        const dx = e.x - anchorG.x,
-          dy = e.y - anchorG.y;
-        const lx = dx * cos - dy * sin,
-          ly = dx * sin + dy * cos;
-        this.selectedShape['scale'] = Math.max(0.01, Math.max(lx / baseW, ly / baseH));
-        setGlobalPointAnchor(this.selectedShape, 0, 0, anchorG);
-      } else if (this.dragMode === 'tr') {
-        const anchorG = getGlobalPoint(this.selectedShape, 0, 1);
-        const dx = e.x - anchorG.x,
-          dy = e.y - anchorG.y;
-        const lx = dx * cos - dy * sin,
-          ly = dx * sin + dy * cos;
-        this.selectedShape['scale'] = Math.max(0.01, Math.max(lx / baseW, -ly / baseH));
-        setGlobalPointAnchor(this.selectedShape, 0, 1, anchorG);
-      } else if (this.dragMode === 'tl') {
-        const anchorG = getGlobalPoint(this.selectedShape, 1, 1);
-        const dx = e.x - anchorG.x,
-          dy = e.y - anchorG.y;
-        const lx = dx * cos - dy * sin,
-          ly = dx * sin + dy * cos;
-        this.selectedShape['scale'] = Math.max(0.01, Math.max(-lx / baseW, -ly / baseH));
-        setGlobalPointAnchor(this.selectedShape, 1, 1, anchorG);
-      } else if (this.dragMode === 'bl') {
-        const anchorG = getGlobalPoint(this.selectedShape, 1, 0);
-        const dx = e.x - anchorG.x,
-          dy = e.y - anchorG.y;
-        const lx = dx * cos - dy * sin,
-          ly = dx * sin + dy * cos;
-        this.selectedShape['scale'] = Math.max(0.01, Math.max(-lx / baseW, ly / baseH));
-        setGlobalPointAnchor(this.selectedShape, 1, 0, anchorG);
-      } else if (this.dragMode === 'crop-r') {
-        const anchorG = getGlobalPoint(this.selectedShape, 0, 0.5);
-        const dx = e.x - anchorG.x,
-          dy = e.y - anchorG.y;
-        const lx = dx * cos - dy * sin;
-        let newCW = lx / (this.selectedShape['scale'] as number);
-        newCW = Math.min(
-          Math.max(1, newCW),
-          (this.selectedShape['image'] as HTMLImageElement).width -
-            (this.selectedShape['cropX'] as number),
-        );
-        this.selectedShape['cropWidth'] = newCW;
-        setGlobalPointAnchor(this.selectedShape, 0, 0.5, anchorG);
-      } else if (this.dragMode === 'crop-l') {
-        const anchorG = getGlobalPoint(this.selectedShape, 1, 0.5);
-        const dx = e.x - anchorG.x,
-          dy = e.y - anchorG.y;
-        const lx = dx * cos - dy * sin;
-        const newCW = -lx / (this.selectedShape['scale'] as number);
-        let deltaX = (this.selectedShape['cropWidth'] as number) - newCW;
-        let newCX = (this.selectedShape['cropX'] as number) + deltaX;
-        let resultCW = newCW;
-        if (newCX < 0) {
-          deltaX = -(this.selectedShape['cropX'] as number);
-          newCX = 0;
-          resultCW = (this.selectedShape['cropWidth'] as number) - deltaX;
-        }
-        if (resultCW < 1) {
-          resultCW = 1;
-          newCX = this.initialCrop.x + this.initialCrop.w - 1;
-        }
-        this.selectedShape['cropX'] = newCX;
-        this.selectedShape['cropWidth'] = resultCW;
-        setGlobalPointAnchor(this.selectedShape, 1, 0.5, anchorG);
-      } else if (this.dragMode === 'crop-b') {
-        const anchorG = getGlobalPoint(this.selectedShape, 0.5, 0);
-        const dx = e.x - anchorG.x,
-          dy = e.y - anchorG.y;
-        const ly = dx * sin + dy * cos;
-        let newCH = ly / (this.selectedShape['scale'] as number);
-        newCH = Math.min(
-          Math.max(1, newCH),
-          (this.selectedShape['image'] as HTMLImageElement).height -
-            (this.selectedShape['cropY'] as number),
-        );
-        this.selectedShape['cropHeight'] = newCH;
-        setGlobalPointAnchor(this.selectedShape, 0.5, 0, anchorG);
-      } else if (this.dragMode === 'crop-t') {
-        const anchorG = getGlobalPoint(this.selectedShape, 0.5, 1);
-        const dx = e.x - anchorG.x,
-          dy = e.y - anchorG.y;
-        const ly = dx * sin + dy * cos;
-        const newCH = -ly / (this.selectedShape['scale'] as number);
-        let deltaY = (this.selectedShape['cropHeight'] as number) - newCH;
-        let newCY = (this.selectedShape['cropY'] as number) + deltaY;
-        let resultCH = newCH;
-        if (newCY < 0) {
-          deltaY = -(this.selectedShape['cropY'] as number);
-          newCY = 0;
-          resultCH = (this.selectedShape['cropHeight'] as number) - deltaY;
-        }
-        if (resultCH < 1) {
-          resultCH = 1;
-          newCY = this.initialCrop.y + this.initialCrop.h - 1;
-        }
-        this.selectedShape['cropY'] = newCY;
-        this.selectedShape['cropHeight'] = resultCH;
-        setGlobalPointAnchor(this.selectedShape, 0.5, 1, anchorG);
-      }
-    }
-
-    this.updateSelectionOverlay(lc);
-  }
-
-  private onUp(_: { x: number; y: number }, lc: LCInstance): void {
-    if (this.didDrag && this.selectedShape) {
-      this.didDrag = false;
-
-      const finalPosition = this.getShapePosition(this.selectedShape);
-      const finalScale = (this.selectedShape['scale'] as number) || 1;
-      const finalRot = (this.selectedShape['rotation'] as number) || 0;
-      const finalCrop = {
-        x: (this.selectedShape['cropX'] as number) || 0,
-        y: (this.selectedShape['cropY'] as number) || 0,
-        w: (this.selectedShape['cropWidth'] as number) || 0,
-        h: (this.selectedShape['cropHeight'] as number) || 0,
-      };
-
-      if (
-        finalPosition.x !== this.initialPosition.x ||
-        finalPosition.y !== this.initialPosition.y ||
-        finalScale !== this.initialScale ||
-        finalRot !== this.initialRotation ||
-        finalCrop.x !== this.initialCrop.x ||
-        finalCrop.y !== this.initialCrop.y ||
-        finalCrop.w !== this.initialCrop.w ||
-        finalCrop.h !== this.initialCrop.h
-      ) {
-        const isImageShape = this.selectedShape['className'] === 'Image';
-        const fromState: Record<string, unknown> = {
-          x: this.initialPosition.x,
-          y: this.initialPosition.y,
-        };
-        const toState: Record<string, unknown> = {
-          x: finalPosition.x,
-          y: finalPosition.y,
-        };
-
-        if (isImageShape) {
-          fromState['scale'] = this.initialScale;
-          fromState['rotation'] = this.initialRotation;
-          fromState['cropX'] = this.initialCrop.x;
-          fromState['cropY'] = this.initialCrop.y;
-          fromState['cropWidth'] = this.initialCrop.w;
-          fromState['cropHeight'] = this.initialCrop.h;
-
-          toState['scale'] = finalScale;
-          toState['rotation'] = finalRot;
-          toState['cropX'] = finalCrop.x;
-          toState['cropY'] = finalCrop.y;
-          toState['cropWidth'] = finalCrop.w;
-          toState['cropHeight'] = finalCrop.h;
-        }
-
-        const action = new TransformAction(lc, this.selectedShape, fromState, toState);
-
-        const activeLc = lc as unknown as Record<string, unknown>;
-        if (typeof activeLc['execute'] === 'function') {
-          (activeLc['execute'] as (a: unknown) => void)(action);
-        } else {
-          action.do();
-        }
-
-        lc.trigger('shapeMoved', { shape: this.selectedShape });
-        lc.trigger('drawingChange', {});
-      }
-
-      lc.repaintLayer('main');
-      this._drawSelectCanvas(lc);
-    }
-
-    this.dragMode = null;
-    this.setCursor(
-      this.getCursorForMode(this.getHoverModeAtPoint(_, this.selectedShape), this.selectedShape),
-    );
-  }
-
-  private getImageHandleMode(lx: number, ly: number, sw: number, sh: number): ImageHandleMode {
-    const pad = this.handlePad;
-    if (Math.abs(lx - sw / 2) < pad && Math.abs(ly + 25) < pad) return 'rotate';
-    if (Math.abs(lx) < pad && Math.abs(ly) < pad) return 'tl';
-    if (Math.abs(lx - sw) < pad && Math.abs(ly) < pad) return 'tr';
-    if (Math.abs(lx) < pad && Math.abs(ly - sh) < pad) return 'bl';
-    if (Math.abs(lx - sw) < pad && Math.abs(ly - sh) < pad) return 'br';
-    if (Math.abs(lx - sw / 2) < pad && Math.abs(ly) < pad) return 'crop-t';
-    if (Math.abs(lx - sw / 2) < pad && Math.abs(ly - sh) < pad) return 'crop-b';
-    if (Math.abs(lx) < pad && Math.abs(ly - sh / 2) < pad) return 'crop-l';
-    if (Math.abs(lx - sw) < pad && Math.abs(ly - sh / 2) < pad) return 'crop-r';
-    if (lx >= 0 && lx <= sw && ly >= 0 && ly <= sh) return 'move';
-    return null;
-  }
-
-  private getHoverModeAtPoint(
-    point: { x: number; y: number },
-    shape: Record<string, unknown> | null,
-  ): ImageHandleMode {
-    if (!shape || shape['className'] !== 'Image' || !shape['image']) {
-      return null;
-    }
-
-    const { lx, ly, sw, sh } = ptToLocal(point.x, point.y, shape);
-    return this.getImageHandleMode(lx, ly, sw, sh);
-  }
-
-  private getCursorForMode(mode: ImageHandleMode, shape: Record<string, unknown> | null): string {
-    if (!mode) return 'default';
-    const rotation = shape ? (shape['rotation'] as number) || 0 : 0;
-
-    if (mode === 'move') {
-      return this.dragMode === 'move' ? 'grabbing' : 'grab';
-    }
-
-    if (mode === 'rotate') {
-      return getRotateCursor();
-    }
-
-    if (mode === 'crop-l' || mode === 'crop-r') {
-      return getResizeCursorForAngle(rotation);
-    }
-
-    if (mode === 'crop-t' || mode === 'crop-b') {
-      return getResizeCursorForAngle(rotation + Math.PI / 2);
-    }
-
-    if (mode === 'tl' || mode === 'br') {
-      return getResizeCursorForAngle(rotation + Math.PI / 4);
-    }
-
-    if (mode === 'tr' || mode === 'bl') {
-      return getResizeCursorForAngle(rotation - Math.PI / 4);
-    }
-
-    return 'default';
-  }
-
-  private updateCursorFromPointer(event: PointerEvent): void {
-    if (this.dragMode) {
-      this.setCursor(this.getCursorForMode(this.dragMode, this.selectedShape));
+    const region = getSelectionRegion(this.lc);
+    const hit = this.hits.hit(this.lc.shapes as Shape[], point, 3 * this.unit());
+    if (region && pointInSelection(point, region.start, region.end, region.mode, region.path)) {
+      this.beginGesture(point, 'move');
       return;
     }
-
-    const point = this.pointerEventToDrawingPoint(event);
-    const mode = this.getHoverModeAtPoint(point, this.selectedShape);
-    this.setCursor(this.getCursorForMode(mode, this.selectedShape));
-  }
-
-  private pointerEventToDrawingPoint(event: PointerEvent): { x: number; y: number } {
-    const activeLc = this.lc as unknown as Record<string, unknown>;
-
-    if (typeof activeLc['clientCoordsToDrawingCoords'] === 'function') {
-      return (
-        activeLc['clientCoordsToDrawingCoords'] as (
-          x: number,
-          y: number,
-        ) => { x: number; y: number }
-      )(event.clientX, event.clientY);
-    }
-
-    const rect = this.lc.canvas.getBoundingClientRect();
-    const x =
-      (event.clientX - rect.left - this.lc.position.x / (this.lc.backingScale || 1)) /
-      this.lc.scale;
-    const y =
-      (event.clientY - rect.top - this.lc.position.y / (this.lc.backingScale || 1)) / this.lc.scale;
-    return { x, y };
-  }
-
-  private setCursor(cursor: string): void {
-    this.lc.canvas.style.cursor = cursor;
-  }
-
-  private getShapePosition(shape: Record<string, unknown>): { x: number; y: number } {
-    // Image shapes store top-left directly in x/y; using rotated bounding-box coords causes jump.
-    if (shape['className'] === 'Image' || (shape['x'] !== undefined && shape['y'] !== undefined)) {
-      return {
-        x: (shape['x'] as number) || 0,
-        y: (shape['y'] as number) || 0,
-      };
-    }
-
-    if (typeof shape['getBoundingRect'] === 'function') {
-      const br = (shape['getBoundingRect'] as () => { x: number; y: number })();
-      return { x: br.x, y: br.y };
-    }
-
-    return { x: 0, y: 0 };
-  }
-
-  private _drawSelectCanvas(lc: LCInstance): void {
-    if (!this.selectCtx) return;
-    this.selectCanvas.width = lc.canvas.width;
-    this.selectCanvas.height = lc.canvas.height;
-    this.selectCtx.clearRect(0, 0, this.selectCanvas.width, this.selectCanvas.height);
-    const shapes = lc.shapes.map((shape: unknown, index: number) => {
-      const LCglobal = (window as unknown as Record<string, unknown>)['LC'] as Record<
-        string,
-        unknown
-      >;
-      const createShape = LCglobal['createShape'] as (
-        n: string,
-        a: Record<string, unknown>,
-      ) => unknown;
-      if (shape && (shape as Record<string, unknown>)['className'] === 'Image') {
-        return createShape('ImageSelectionOverlay', {
-          shape: shape,
-          overrideBg: '#' + this._intToHex(index + 1),
-        });
+    if (hit) {
+      if (region || !this.selected.includes(hit)) {
+        setSelectionRegion(this.lc, null);
+        this.setSelected([hit]);
       }
-      return createShape('SelectionBox', {
-        shape: shape,
-        handleSize: 0,
-        backgroundColor: '#' + this._intToHex(index + 1),
+      this.beginGesture(point, 'move');
+      return;
+    }
+    setSelectionRegion(this.lc, null);
+    this.additive = this.shift;
+    if (!this.additive) this.setSelected([]);
+    this.start = { ...point };
+    this.selectionEnd = { ...point };
+    this.path = [];
+    this.marquee = true;
+    this.overlay();
+  }
+
+  private beginGesture(point: Point, mode: Gesture['mode']): void {
+    this.gesture = {
+      mode,
+      start: { ...point },
+      point: { ...point },
+      bounds: getSelectionBounds(this.transformShapes()),
+      before: captureSelection(this.lc, this.selected, getSelectionRegion(this.lc)),
+      states: new Map(),
+      crop: this.shift && ['group-t', 'group-b', 'group-l', 'group-r'].includes(mode),
+      stretchStates: null,
+      changed: false,
+      prepared: false,
+      scene: null,
+    };
+    this.lc.canvas.style.cursor = mode === 'move' ? 'grabbing' : this.cursor(mode);
+  }
+
+  private prepare(gesture: Gesture): void {
+    if (gesture.prepared) return;
+    this.bakeLegacyArtwork();
+    gesture.prepared = true;
+    const region = getSelectionRegion(this.lc);
+    if (region) {
+      const fragments: Shape[] = [];
+      const sources = new Set(region.shapes);
+      const next = (this.lc.shapes as Shape[]).flatMap((shape) => {
+        if (!sources.has(shape)) return [shape];
+        const selected = regionPieces(shape, region, true, this.lc.shapes);
+        if (!selected.length) return [shape];
+        fragments.push(...selected);
+        return [...regionPieces(shape, region, false, this.lc.shapes), ...selected];
       });
-    });
-    const activeLc = lc as unknown as Record<string, unknown>;
-    if (typeof activeLc['draw'] === 'function') {
-      (activeLc['draw'] as (s: unknown[], c: unknown) => void)(shapes, this.selectCtx);
+      this.lc.shapes.splice(0, this.lc.shapes.length, ...next);
+      setSelectionRegion(this.lc, null);
+      this.selected = fragments;
     }
+    if (!gesture.crop) {
+      for (const shape of this.selected)
+        prepareTransform(
+          shape,
+          gesture.mode === 'move'
+            ? 'move'
+            : ['group-t', 'group-b', 'group-l', 'group-r'].includes(gesture.mode)
+            ? 'stretch'
+            : 'transform'
+        );
+    }
+    gesture.states = snapshotShapes(this.selected);
+    setSelection(this.lc, this.selected);
   }
 
-  private _intToHex(i: number): string {
-    return ('000000' + i.toString(16)).slice(-6);
+  private bakeLegacyArtwork(): void {
+    const region = getSelectionRegion(this.lc);
+    const { shapes, replacements } = bakeLegacyMasks(this.lc.shapes);
+    this.lc.shapes.splice(0, this.lc.shapes.length, ...shapes);
+    this.selected = this.selected.map((shape) => replacements.get(shape) ?? shape);
+    if (region) {
+      setSelectionRegion(this.lc, {
+        ...region,
+        shapes: region.shapes.map((shape) => replacements.get(shape) ?? shape),
+      });
+    }
+    setSelection(this.lc, this.selected);
+    this.hits.clear();
   }
 
-  private _getPixel(
-    x: number,
-    y: number,
-    lc: LCInstance,
-    ctx: CanvasRenderingContext2D,
-  ): number | null {
-    const activeLc = lc as unknown as Record<string, unknown>;
-    const p =
-      typeof activeLc['drawingCoordsToClientCoords'] === 'function'
-        ? (
-            activeLc['drawingCoordsToClientCoords'] as (
-              x: number,
-              y: number,
-            ) => { x: number; y: number }
-          )(x, y)
-        : { x, y };
-
-    if (p.x < 0 || p.x >= this.selectCanvas.width || p.y < 0 || p.y >= this.selectCanvas.height)
-      return null;
-
-    try {
-      const pixel = ctx.getImageData(p.x, p.y, 1, 1).data;
-      if (pixel[3]) {
-        const index = parseInt(this._rgbToHex(pixel[0], pixel[1], pixel[2]), 16) - 1;
-        return index >= 0 ? index : null;
+  private drag(point: Point): void {
+    if (this.marquee) {
+      this.updateSelectionEnd(point);
+      this.preview = { ...point };
+      if (this.selectionMode === 'lasso') this.path.push({ ...point });
+      this.overlay();
+      return;
+    }
+    const gesture = this.gesture;
+    if (gesture) gesture.point = { ...point };
+    if (
+      !gesture ||
+      (point.x === gesture.start.x && point.y === gesture.start.y && !gesture.changed)
+    )
+      return;
+    this.prepare(gesture);
+    gesture.changed = true;
+    const { x, y, width, height } = gesture.bounds;
+    const dx = point.x - gesture.start.x,
+      dy = point.y - gesture.start.y;
+    if (gesture.crop) {
+      this.crop(gesture, point);
+    } else if (gesture.mode === 'move') {
+      translateShapes(gesture.states, dx, dy);
+    } else if (gesture.mode === 'group-rotate') {
+      const center = { x: x + width / 2, y: y + height / 2 };
+      rotateShapes(
+        gesture.states,
+        center,
+        Math.atan2(point.y - center.y, point.x - center.x) -
+          Math.atan2(gesture.start.y - center.y, gesture.start.x - center.x)
+      );
+    } else if (width > 0 && height > 0) {
+      const suffix = gesture.mode.replace('group-', '');
+      const left = suffix.includes('l'),
+        top = suffix.includes('t');
+      const horizontal = suffix === 'l' || suffix === 'r';
+      const vertical = suffix === 't' || suffix === 'b';
+      const anchor = { x: left ? x + width : x, y: top ? y + height : y };
+      let sx = vertical ? 1 : Math.max(0.01, ((point.x - anchor.x) * (left ? -1 : 1)) / width);
+      let sy = horizontal ? 1 : Math.max(0.01, ((point.y - anchor.y) * (top ? -1 : 1)) / height);
+      let states = gesture.states;
+      if (!horizontal && !vertical) {
+        if (this.shift) {
+          if (!gesture.stretchStates) {
+            restoreShapes(gesture.states);
+            for (const shape of this.selected) prepareTransform(shape, 'stretch');
+            gesture.stretchStates = snapshotShapes(this.selected);
+          }
+          states = gesture.stretchStates;
+        } else {
+          sx = sy = Math.max(sx, sy);
+        }
       }
-    } catch {
-      // empty
+      resizeShapes(states, anchor, sx, sy);
     }
-    return null;
+    this.hits.clear();
+    this.overlay();
   }
 
-  private _componentToHex(c: number): string {
-    return ('0' + c.toString(16)).slice(-2);
+  private isCorner(mode: Gesture['mode']): boolean {
+    return ['group-tl', 'group-tr', 'group-bl', 'group-br'].includes(mode);
   }
-  private _rgbToHex(r: number, g: number, b: number): string {
-    return `${this._componentToHex(r)}${this._componentToHex(g)}${this._componentToHex(b)}`;
+
+  private crop(gesture: Gesture, point: Point): void {
+    const { x, y, width, height } = gesture.bounds;
+    let left = x,
+      top = y,
+      right = x + width,
+      bottom = y + height;
+    if (gesture.mode === 'group-l') left = Math.min(right - this.unit(), Math.max(x, point.x));
+    if (gesture.mode === 'group-r') right = Math.max(left + this.unit(), Math.min(right, point.x));
+    if (gesture.mode === 'group-t') top = Math.min(bottom - this.unit(), Math.max(y, point.y));
+    if (gesture.mode === 'group-b') bottom = Math.max(top + this.unit(), Math.min(bottom, point.y));
+    restoreShapes(gesture.states);
+    const sources = new Set(gesture.states.keys());
+    const region: SelectionRegion = {
+      start: { x: left, y: top },
+      end: { x: right, y: bottom },
+      mode: 'rectangle',
+      path: [],
+      shapes: [...sources],
+    };
+    // Rebuild from the pre-crop scene, retaining original interleaving and unselected objects.
+    const scene = gesture.scene ?? [...this.lc.shapes];
+    gesture.scene = scene;
+    const selected: Shape[] = [];
+    const next = scene.flatMap((item) => {
+      const shape = item as Shape;
+      if (!sources.has(shape)) return [shape];
+      const fragments = regionPieces(shape, region, true, scene);
+      selected.push(...fragments);
+      return fragments;
+    });
+    this.lc.shapes.splice(0, this.lc.shapes.length, ...next);
+    this.selected = selected;
+    setSelection(this.lc, this.selected);
+  }
+
+  private up(point: Point): void {
+    if (this.marquee) {
+      if (this.selectionMode === 'polygon') {
+        const first = this.path[0];
+        if (
+          !first ||
+          this.path.length < 3 ||
+          Math.hypot(point.x - first.x, point.y - first.y) > 10 * this.unit()
+        ) {
+          this.path.push({ ...point });
+          this.preview = { ...point };
+          this.overlay();
+          return;
+        }
+      } else {
+        this.updateSelectionEnd(point);
+        if (this.selectionMode === 'lasso') this.path.push({ ...point });
+      }
+      if (
+        (this.selectionMode === 'polygon' || this.selectionMode === 'lasso') &&
+        this.path.length
+      ) {
+        this.start = {
+          x: Math.min(...this.path.map((p) => p.x)),
+          y: Math.min(...this.path.map((p) => p.y)),
+        };
+        this.selectionEnd = {
+          x: Math.max(...this.path.map((p) => p.x)),
+          y: Math.max(...this.path.map((p) => p.y)),
+        };
+      }
+      const mode = this.selectionMode === 'object' ? 'rectangle' : this.selectionMode;
+      const valid = this.start.x !== this.selectionEnd.x && this.start.y !== this.selectionEnd.y;
+      const found = valid
+        ? (this.lc.shapes as Shape[]).filter((shape) =>
+            this.hits.intersects(shape, this.start, this.selectionEnd, mode, this.path)
+          )
+        : [];
+      this.marquee = false;
+      if (this.selectionMode === 'object') {
+        this.setSelected(this.additive ? [...new Set([...this.selected, ...found])] : found);
+      } else {
+        this.selected = found;
+        setSelectionRegion(
+          this.lc,
+          found.length
+            ? {
+                start: this.start,
+                end: this.selectionEnd,
+                mode,
+                path: [...this.path],
+                shapes: found,
+              }
+            : null
+        );
+        this.setSelected(found);
+        this.onRegionSelectionComplete?.();
+      }
+      return;
+    }
+    const gesture = this.gesture;
+    if (!gesture) return;
+    this.drag(point);
+    this.commitGesture();
+    this.lc.canvas.style.cursor = 'default';
+    this.overlay();
+  }
+
+  private commitGesture(): void {
+    const gesture = this.gesture;
+    this.gesture = null;
+    if (gesture?.changed) {
+      this.lc.execute(
+        new SelectionAction(
+          this.lc,
+          gesture.before,
+          captureSelection(this.lc, this.selected, getSelectionRegion(this.lc))
+        )
+      );
+      this.lc.trigger('drawingChange', {});
+    }
+  }
+
+  private hasAspectConstraint(): boolean {
+    return this.selectionMode === 'rectangle' || this.selectionMode === 'circle';
+  }
+
+  private updateSelectionEnd(point: Point): void {
+    this.rawSelectionEnd = { ...point };
+    this.selectionEnd =
+      this.shift && this.hasAspectConstraint()
+        ? constrainSquare(this.start, point)
+        : { ...point };
+  }
+
+  private overlay(): void {
+    const unit = this.unit();
+    this.lc.setShapesInProgress(
+      this.marquee
+        ? [
+            LC.createShape('SelectionRegionOverlay', {
+              start: this.start,
+              end: this.selectionEnd,
+              mode: this.selectionMode === 'object' ? 'rectangle' : this.selectionMode,
+              path:
+                this.selectionMode === 'polygon' && this.preview
+                  ? [...this.path, this.preview]
+                  : this.path,
+              unit,
+            }),
+          ]
+        : this.selected.length
+        ? [LC.createShape('SelectionGroupOverlay', { shapes: this.transformShapes(), unit })]
+        : []
+    );
+    this.lc.repaintLayer('main');
   }
 }

@@ -35,18 +35,33 @@ class AboutStub {}
 
 describe('About dialog', () => {
   const originalUrl = window.location.href;
+  const originalExecCommand = Object.getOwnPropertyDescriptor(document, 'execCommand');
 
   afterEach(() => {
     TestBed.resetTestingModule();
     window.history.replaceState(null, '', originalUrl);
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
+    if (originalExecCommand) Object.defineProperty(document, 'execCommand', originalExecCommand);
+    else Reflect.deleteProperty(document, 'execCommand');
   });
 
   function setup(platform: 'ios' | 'android' | 'web', electron = false) {
     vi.spyOn(Capacitor, 'getPlatform').mockReturnValue(platform);
     vi.spyOn(Capacitor, 'isNativePlatform').mockReturnValue(platform !== 'web');
-    vi.stubGlobal('quickboard', electron ? {} : undefined);
+    let shortcut: ((option: string) => void) | undefined;
+    vi.stubGlobal(
+      'quickboard',
+      electron
+        ? {
+            onShortcut: (callback: (option: string) => void) => {
+              shortcut = callback;
+              return () => undefined;
+            },
+          }
+        : undefined
+    );
+    const undoRedo = { triggerUndo: vi.fn(), triggerRedo: vi.fn() };
     let openIosDialog: ((dialog: 'about' | 'settings' | null) => void) | undefined;
     TestBed.configureTestingModule({
       providers: [
@@ -75,7 +90,7 @@ describe('About dialog', () => {
           },
         },
         { provide: WindowScalingService, useValue: { init: vi.fn() } },
-        { provide: UndoRedoService, useValue: {} },
+        { provide: UndoRedoService, useValue: undoRedo },
         { provide: AndroidOpenFileService, useValue: { init: vi.fn(), destroy: vi.fn() } },
         {
           provide: IosIntegrationService,
@@ -97,7 +112,7 @@ describe('About dialog', () => {
     });
     const fixture = TestBed.createComponent(App);
     fixture.detectChanges();
-    return { fixture, openIosDialog };
+    return { fixture, openIosDialog, shortcut, undoRedo };
   }
 
   it.each(['android', 'ios'] as const)(
@@ -135,5 +150,51 @@ describe('About dialog', () => {
     const { fixture } = setup('web', electron);
     expect(fixture.nativeElement.querySelector('app-about-window')).not.toBeNull();
     expect(fixture.nativeElement.querySelector('button.dialog-close')).toBeNull();
+  });
+
+  it('routes EditorJS undo/redo through shared history but keeps native text copy/paste', () => {
+    const { fixture, shortcut, undoRedo } = setup('web', true);
+    const editor = document.createElement('div');
+    editor.id = 'editorjs';
+    const text = document.createElement('div');
+    text.contentEditable = 'true';
+    text.tabIndex = 0;
+    editor.append(text);
+    document.body.append(editor);
+    const execCommand = vi.fn();
+    Object.defineProperty(document, 'execCommand', { configurable: true, value: execCommand });
+    try {
+      text.focus();
+      shortcut?.('undo');
+      shortcut?.('redo');
+      expect(undoRedo.triggerUndo).toHaveBeenCalledOnce();
+      expect(undoRedo.triggerRedo).toHaveBeenCalledOnce();
+      expect(execCommand).not.toHaveBeenCalled();
+      shortcut?.('copy');
+      shortcut?.('paste');
+      expect(execCommand.mock.calls).toEqual([['copy'], ['paste']]);
+    } finally {
+      editor.remove();
+      fixture.destroy();
+    }
+  });
+
+  it('keeps native undo/redo for ordinary inputs outside EditorJS', () => {
+    const { fixture, shortcut, undoRedo } = setup('web', true);
+    const input = document.createElement('input');
+    document.body.append(input);
+    const execCommand = vi.fn();
+    Object.defineProperty(document, 'execCommand', { configurable: true, value: execCommand });
+    try {
+      input.focus();
+      shortcut?.('undo');
+      shortcut?.('redo');
+      expect(execCommand.mock.calls).toEqual([['undo'], ['redo']]);
+      expect(undoRedo.triggerUndo).not.toHaveBeenCalled();
+      expect(undoRedo.triggerRedo).not.toHaveBeenCalled();
+    } finally {
+      input.remove();
+      fixture.destroy();
+    }
   });
 });

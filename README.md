@@ -69,6 +69,7 @@ Builds will be output to the `release/` directory.
 **Note:** To build for macOS, you need to run on macOS. For Windows builds, use Windows or Linux with Wine.
 **Note:** iOS builds require a paid GitHub account for macOS runners. Android builds run on free Linux runners.
 
+
 ## License
 
 AGPLv3

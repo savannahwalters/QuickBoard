@@ -13,6 +13,7 @@ import { UndoRedoService } from './undo-redo.service';
 export interface IosCanvasDelegate {
   flushCurrentBoardState(force?: boolean): void;
   prepareForProjectLoad(): void;
+  requestImageImport(): void;
 }
 
 type IosDialog = 'about' | 'settings' | null;
@@ -163,6 +164,9 @@ export class IosIntegrationService {
         return;
       case 'file.export':
         this.triggerIosExport();
+        break;
+      case 'file.importImage':
+        this.canvasDelegate?.requestImageImport();
         return;
       case 'edit.undo':
         this.undoRedo.triggerUndo();

@@ -1,19 +1,20 @@
-import { resolveAccentBorderColor, resolveAccentColor } from './cursors';
+import { getSelectionBounds } from './geometry';
+import { registerRotatableShapes } from './rotatable-shapes';
+import { drawSelectionBox } from './selection-handles';
+import { selectionColors } from './selection-style';
+import type { ShapeRegistry } from '../../literally-canvas-interfaces';
 
-export function registerImprovedSelectShapes(LC: Record<string, unknown>): void {
-  if (
-    !LC ||
-    typeof LC['defineShape'] !== 'function' ||
-    typeof LC['defineCanvasRenderer'] !== 'function'
-  )
-    return;
+export function registerImprovedSelectShapes(LC: ShapeRegistry): void {
+  registerRotatableShapes(LC);
 
-  LC['defineShape']('Image', {
+  LC.defineShape('Image', {
     constructor: function (this: Record<string, unknown>, args: Record<string, unknown>) {
       if (!args) args = {};
       this['x'] = args['x'] || 0;
       this['y'] = args['y'] || 0;
       this['scale'] = args['scale'] || 1;
+      this['scaleX'] = args['scaleX'] || 1;
+      this['scaleY'] = args['scaleY'] || 1;
       this['image'] = args['image'] || null;
       this['crossOrigin'] =
         (args['image'] && (args['image'] as HTMLImageElement).crossOrigin) || null;
@@ -30,10 +31,12 @@ export function registerImprovedSelectShapes(LC: Record<string, unknown>): void 
         return { x: this['x'] as number, y: this['y'] as number, width: 0, height: 0 };
       const w =
         ((this['cropWidth'] as number) || (this['image'] as HTMLImageElement).width) *
-        (this['scale'] as number);
+        (this['scale'] as number) *
+        ((this['scaleX'] as number) || 1);
       const h =
         ((this['cropHeight'] as number) || (this['image'] as HTMLImageElement).height) *
-        (this['scale'] as number);
+        (this['scale'] as number) *
+        ((this['scaleY'] as number) || 1);
 
       if (!this['rotation']) {
         return { x: this['x'] as number, y: this['y'] as number, width: w, height: h };
@@ -70,6 +73,8 @@ export function registerImprovedSelectShapes(LC: Record<string, unknown>): void 
         imageSrc: this['image'] ? (this['image'] as HTMLImageElement).src : null,
         imageObject: this['image'],
         scale: this['scale'],
+        scaleX: this['scaleX'],
+        scaleY: this['scaleY'],
         rotation: this['rotation'],
         cropX: this['cropX'],
         cropY: this['cropY'],
@@ -87,39 +92,34 @@ export function registerImprovedSelectShapes(LC: Record<string, unknown>): void 
         if (data['crossOrigin']) img.crossOrigin = data['crossOrigin'] as string;
         img.src = data['imageSrc'] as string;
       }
-      const LCglobal = (window as unknown as Record<string, unknown>)['LC'] as Record<
-        string,
-        unknown
-      >;
-      return (LCglobal['createShape'] as (n: string, a: Record<string, unknown>) => unknown)(
-        'Image',
-        {
-          x: data['x'],
-          y: data['y'],
-          image: img,
-          scale: data['scale'],
-          rotation: data['rotation'],
-          cropX: data['cropX'],
-          cropY: data['cropY'],
-          cropWidth: data['cropWidth'],
-          cropHeight: data['cropHeight'],
-        },
-      );
+      return LC.createShape('Image', {
+        x: data['x'],
+        y: data['y'],
+        image: img,
+        scale: data['scale'],
+        scaleX: data['scaleX'],
+        scaleY: data['scaleY'],
+        rotation: data['rotation'],
+        cropX: data['cropX'],
+        cropY: data['cropY'],
+        cropWidth: data['cropWidth'],
+        cropHeight: data['cropHeight'],
+      });
     },
   });
 
-  LC['defineCanvasRenderer'](
+  LC.defineCanvasRenderer(
     'Image',
     function (
       ctx: CanvasRenderingContext2D,
       shape: Record<string, unknown>,
-      retryCallback: () => void,
+      retryCallback: () => void
     ) {
       if (shape['image'] && (shape['image'] as HTMLImageElement).width) {
         const w = (shape['cropWidth'] as number) || (shape['image'] as HTMLImageElement).width;
         const h = (shape['cropHeight'] as number) || (shape['image'] as HTMLImageElement).height;
-        const sw = w * (shape['scale'] as number);
-        const sh = h * (shape['scale'] as number);
+        const sw = w * (shape['scale'] as number) * ((shape['scaleX'] as number) || 1);
+        const sh = h * (shape['scale'] as number) * ((shape['scaleY'] as number) || 1);
         ctx.save();
         const cx = (shape['x'] as number) + sw / 2;
         const cy = (shape['y'] as number) + sh / 2;
@@ -142,94 +142,98 @@ export function registerImprovedSelectShapes(LC: Record<string, unknown>): void 
           -sw / 2,
           -sh / 2,
           sw,
-          sh,
+          sh
         );
         ctx.restore();
       } else if (retryCallback) {
         if (shape['image']) (shape['image'] as HTMLImageElement).onload = retryCallback;
       }
-    },
+    }
   );
 
-  LC['defineShape']('ImageSelectionOverlay', {
-    constructor: function (
-      this: { shape: unknown; overrideBg: string },
-      args: { shape: unknown; overrideBg: string },
-    ) {
-      this.shape = args.shape;
-      this.overrideBg = args.overrideBg;
+  LC['defineShape']('SelectionGroupOverlay', {
+    constructor: function (this: Record<string, unknown>, args: Record<string, unknown>) {
+      this['shapes'] = args['shapes'];
+      this['unit'] = args['unit'] ?? 1;
     },
-    getBoundingRect: function (this: {
-      shape: { getBoundingRect: () => { x: number; y: number; width: number; height: number } };
-    }) {
-      return this.shape.getBoundingRect();
+    getBoundingRect: function (this: Record<string, unknown>) {
+      return getSelectionBounds(this['shapes'] as Record<string, unknown>[]);
     },
   });
 
   LC['defineCanvasRenderer'](
-    'ImageSelectionOverlay',
-    function (ctx: CanvasRenderingContext2D, overlayShape: Record<string, unknown>) {
-      const shape = overlayShape['shape'] as Record<string, unknown>;
-      if (!shape || shape['className'] !== 'Image' || !shape['image']) return;
+    'SelectionGroupOverlay',
+    function (ctx: CanvasRenderingContext2D, overlay: Record<string, unknown>) {
+      const bounds = getSelectionBounds(overlay['shapes'] as Record<string, unknown>[]);
+      drawSelectionBox(ctx, bounds, (overlay['unit'] as number) || 1);
+    }
+  );
 
-      const w =
-        ((shape['cropWidth'] as number) || (shape['image'] as HTMLImageElement).width) *
-        (shape['scale'] as number);
-      const h =
-        ((shape['cropHeight'] as number) || (shape['image'] as HTMLImageElement).height) *
-        (shape['scale'] as number);
+  LC['defineShape']('SelectionRegionOverlay', {
+    constructor: function (this: Record<string, unknown>, args: Record<string, unknown>) {
+      Object.assign(this, args);
+    },
+    getBoundingRect: function (this: Record<string, unknown>) {
+      const start = this['start'] as { x: number; y: number };
+      const end = this['end'] as { x: number; y: number };
+      const path = this['path'] as { x: number; y: number }[];
+      if ((this['mode'] === 'polygon' || this['mode'] === 'lasso') && path.length) {
+        const x = Math.min(...path.map((point) => point.x));
+        const y = Math.min(...path.map((point) => point.y));
+        return {
+          x,
+          y,
+          width: Math.max(...path.map((point) => point.x)) - x,
+          height: Math.max(...path.map((point) => point.y)) - y,
+        };
+      }
+      return {
+        x: Math.min(start.x, end.x),
+        y: Math.min(start.y, end.y),
+        width: Math.abs(end.x - start.x),
+        height: Math.abs(end.y - start.y),
+      };
+    },
+  });
+
+  LC['defineCanvasRenderer'](
+    'SelectionRegionOverlay',
+    function (ctx: CanvasRenderingContext2D, shape: Record<string, unknown>) {
+      const start = shape['start'] as { x: number; y: number };
+      const end = shape['end'] as { x: number; y: number };
+      const mode = shape['mode'] as string;
+      const path = shape['path'] as { x: number; y: number }[];
+      const left = Math.min(start.x, end.x);
+      const top = Math.min(start.y, end.y);
+      const width = Math.abs(end.x - start.x);
+      const height = Math.abs(end.y - start.y);
 
       ctx.save();
-      ctx.translate((shape['x'] as number) + w / 2, (shape['y'] as number) + h / 2);
-      if (shape['rotation']) ctx.rotate(shape['rotation'] as number);
-
-      if (overlayShape['overrideBg']) {
-        ctx.fillStyle = overlayShape['overrideBg'] as string;
-        ctx.fillRect(-w / 2, -h / 2, w, h);
+      const unit = (shape['unit'] as number) || 1;
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = unit;
+      ctx.setLineDash([2 * unit, 3 * unit]);
+      ctx.beginPath();
+      if (mode === 'circle') {
+        ctx.ellipse(left + width / 2, top + height / 2, width / 2, height / 2, 0, 0, 2 * Math.PI);
+      } else if ((mode === 'lasso' || mode === 'polygon') && path.length > 1) {
+        ctx.moveTo(path[0].x, path[0].y);
+        for (const point of path.slice(1)) ctx.lineTo(point.x, point.y);
       } else {
-        const accent = resolveAccentColor();
-        const accentBorder = resolveAccentBorderColor();
-
-        ctx.strokeStyle = accentBorder;
-        ctx.lineWidth = 1;
-        ctx.setLineDash([5, 5]);
-        ctx.strokeRect(-w / 2, -h / 2, w, h);
-        ctx.setLineDash([]);
-
-        ctx.fillStyle = accent;
-        ctx.strokeStyle = '#ffffff';
-        ctx.lineWidth = 1.5;
-
-        const drawHandle = (x: number, y: number, isCrop = false) => {
-          ctx.beginPath();
-          if (isCrop) {
-            ctx.fillRect(x - 6, y - 6, 12, 12);
-            ctx.strokeRect(x - 6, y - 6, 12, 12);
-          } else {
-            ctx.arc(x, y, 7, 0, 2 * Math.PI);
-            ctx.fill();
-            ctx.stroke();
-          }
-        };
-
-        drawHandle(-w / 2, -h / 2);
-        drawHandle(w / 2, -h / 2);
-        drawHandle(-w / 2, h / 2);
-        drawHandle(w / 2, h / 2);
-
-        drawHandle(0, -h / 2, true);
-        drawHandle(0, h / 2, true);
-        drawHandle(-w / 2, 0, true);
-        drawHandle(w / 2, 0, true);
-
-        ctx.beginPath();
-        ctx.moveTo(0, -h / 2);
-        ctx.lineTo(0, -h / 2 - 25);
-        ctx.stroke();
-        drawHandle(0, -h / 2 - 25);
+        ctx.rect(left, top, width, height);
       }
 
+      ctx.stroke();
+      ctx.strokeStyle = selectionColors().border;
+      ctx.lineDashOffset = 2.5 * unit;
+      ctx.stroke();
+      if (mode === 'polygon' && path.length) {
+        ctx.setLineDash([]);
+        ctx.beginPath();
+        ctx.arc(path[0].x, path[0].y, 5 * unit, 0, Math.PI * 2);
+        ctx.stroke();
+      }
       ctx.restore();
-    },
+    }
   );
 }

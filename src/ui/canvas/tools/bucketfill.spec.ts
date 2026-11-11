@@ -80,7 +80,7 @@ describe('bucket fill', () => {
       saveShape,
     } as unknown as LCInstance;
 
-    new BucketFill(lc).begin(0, 0, lc);
+    new BucketFill().begin(0, 0, lc);
 
     expect(saveShape).toHaveBeenCalledOnce();
     expect(createShape).toHaveBeenCalledWith('Image', {

@@ -7,6 +7,11 @@ const vm = require('node:vm');
 
 async function setup() {
   const ipcRenderer = new EventEmitter();
+  const invocations = [];
+  ipcRenderer.invoke = async (channel) => {
+    invocations.push(channel);
+    return { success: true, cancelled: true };
+  };
   let bridge;
   const context = {
     console,
@@ -27,9 +32,16 @@ async function setup() {
   vm.runInNewContext(source, context);
   return {
     bridge,
+    invocations,
     send: (payload) => ipcRenderer.emit('quickboard:load-data', {}, payload),
   };
 }
+
+test('image picker requests invoke the native picker through the preload bridge', async () => {
+  const { bridge, invocations } = await setup();
+  await bridge.pickImageFile();
+  assert.deepEqual(invocations, ['quickboard:pick-image-file']);
+});
 
 test('buffers launch files until the renderer registers its load handler', async () => {
   const { bridge, send } = await setup();

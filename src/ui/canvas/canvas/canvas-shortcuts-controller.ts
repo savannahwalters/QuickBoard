@@ -1,29 +1,35 @@
-import { CanvasComponent } from './canvas.component';
+import type { CanvasComponent } from './canvas.component';
 import { matchShortcut } from 'src/shared/shortcuts';
 
 export class CanvasShortcutsController {
   constructor(private readonly canvas: CanvasComponent) {}
 
   handleKeyDown(event: KeyboardEvent) {
-    if (event.ctrlKey || event.metaKey || event.altKey) {
+    if (
+      event.defaultPrevented ||
+      event.isComposing ||
+      event.ctrlKey ||
+      event.metaKey ||
+      event.altKey
+    ) {
       return;
     }
 
     const activeE = this.canvas.document.activeElement;
-    if (
-      activeE &&
-      activeE !== this.canvas.document.body &&
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      !(this.canvas as any).el.nativeElement.contains(activeE)
-    ) {
+    if (activeE && activeE !== this.canvas.document.body && !this.canvas.containsElement(activeE)) {
       return;
     }
 
     if (
       activeE instanceof HTMLInputElement ||
       activeE instanceof HTMLTextAreaElement ||
-      (activeE as HTMLElement).isContentEditable
+      (activeE instanceof HTMLElement && activeE.isContentEditable)
     ) {
+      return;
+    }
+
+    if (event.key === 'Backspace' || event.key === 'Delete') {
+      if (this.canvas.deleteSelection()) event.preventDefault();
       return;
     }
 
@@ -36,17 +42,7 @@ export class CanvasShortcutsController {
         this.canvas.switchTools('select');
         break;
       case 'image-tool': {
-        this.canvas.switchTools('image');
-        const input = this.canvas.document.createElement('input') as HTMLInputElement;
-        input.type = 'file';
-        input.accept = 'image/*';
-        input.onchange = (e: Event) => {
-          const target = e.target as HTMLInputElement;
-          if (target.files && target.files.length > 0) {
-            this.canvas.toolbar()?.imageSelected.emit(target.files[0]);
-          }
-        };
-        input.click();
+        this.canvas.requestImageImport();
         break;
       }
       case 'pencil-tool':
@@ -72,13 +68,12 @@ export class CanvasShortcutsController {
             this.canvas.switchTools('pencil');
           }
         } else if (tb?.isEditToolActive()) {
-          const option = tb.selectedEditToolOption();
-          if (option?.id === 'select') {
-            this.canvas.switchTools('image');
-            tb.onActiveSubmenuSelect('image');
-          } else {
-            this.canvas.switchTools('select');
-          }
+          const options = tb.editTools;
+          const currentIndex = options.findIndex(
+            (option) => option.id === this.canvas.activeTool()
+          );
+          const next = options[(currentIndex + 1 + options.length) % options.length];
+          if (next) this.canvas.switchTools(next.id);
         } else if (tb?.isShapeToolActive()) {
           const option = tb.selectedShapeTool();
           switch (option?.id) {
@@ -112,13 +107,12 @@ export class CanvasShortcutsController {
             this.canvas.switchTools('pencil');
           }
         } else if (tb?.isEditToolActive()) {
-          const option = tb.selectedEditToolOption();
-          if (option?.id === 'select') {
-            this.canvas.switchTools('image');
-            tb.onActiveSubmenuSelect('image');
-          } else {
-            this.canvas.switchTools('select');
-          }
+          const options = tb.editTools;
+          const currentIndex = options.findIndex(
+            (option) => option.id === this.canvas.activeTool()
+          );
+          const previous = options[(currentIndex - 1 + options.length) % options.length];
+          if (previous) this.canvas.switchTools(previous.id);
         } else if (tb?.isShapeToolActive()) {
           const option = tb.selectedShapeTool();
           switch (option?.id) {
@@ -171,17 +165,6 @@ export class CanvasShortcutsController {
               zoomCenter
             );
           }
-        } else if (this.canvas.activeTool() === 'image') {
-          const input = this.canvas.document.createElement('input') as HTMLInputElement;
-          input.type = 'file';
-          input.accept = 'image/*';
-          input.onchange = (e: Event) => {
-            const target = e.target as HTMLInputElement;
-            if (target.files && target.files.length > 0) {
-              this.canvas.toolbar()?.imageSelected.emit(target.files[0]);
-            }
-          };
-          input.click();
         }
         break;
       }
@@ -194,8 +177,8 @@ export class CanvasShortcutsController {
           this.canvas.switchTools(tb.selectedEraserToolOption()?.id as string);
         } else if (tb?.isEraserToolActive()) {
           this.canvas.switchTools('bucket-fill');
-        } else if (tb?.isEditToolActive()) {
-          this.canvas.switchTools(tb.selectedDrawToolOption()?.id as string);
+        } else if (this.canvas.activeTool() === 'select' || tb?.isEditToolActive()) {
+          this.canvas.switchTools(tb?.selectedDrawToolOption()?.id ?? 'pencil');
         } else if (this.canvas.activeTool() === 'bucket-fill') {
           this.canvas.switchTools('zoom');
         } else if (this.canvas.activeTool() === 'zoom') {

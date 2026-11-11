@@ -98,6 +98,12 @@ contextBridge.exposeInMainWorld('quickboard', {
     ipcRenderer.on('quickboard:shortcut', listener);
     return () => ipcRenderer.removeListener('quickboard:shortcut', listener);
   },
+  onImportImage: (handler) => {
+    const listener = () => handler();
+    ipcRenderer.on('quickboard:import-image', listener);
+    return () => ipcRenderer.removeListener('quickboard:import-image', listener);
+  },
+  pickImageFile: () => ipcRenderer.invoke('quickboard:pick-image-file'),
   onSaveResult: (handler) => {
     const listener = (_event, payload) => handler(payload);
     ipcRenderer.on('quickboard:save-result', listener);

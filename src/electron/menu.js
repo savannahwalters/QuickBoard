@@ -48,6 +48,16 @@ function sendToMainWindow(preferredWin, channel, payload) {
   target.webContents.send(channel, payload);
 }
 
+function sendEditCommand(command) {
+  const focused = BrowserWindow.getFocusedWindow();
+  if (!isWindowAlive(focused)) return;
+  if (isDialogWindow(focused)) {
+    focused.webContents[command]();
+  } else {
+    focused.webContents.send('quickboard:shortcut', command);
+  }
+}
+
 function openAboutWindow(app) {
   if (aboutWin && !aboutWin.isDestroyed()) {
     aboutWin.focus();
@@ -174,6 +184,15 @@ function buildMenu(app, win, hooks = {}) {
           }
         },
       }),
+      {
+        label: 'Import',
+        submenu: [
+          {
+            label: 'Image...',
+            click: () => sendToMainWindow(win, 'quickboard:import-image'),
+          },
+        ],
+      },
       { type: 'separator' },
       shortcutMenuItem('export', {
         click: () => {
@@ -223,21 +242,17 @@ function buildMenu(app, win, hooks = {}) {
     submenu: [
       ...['undo', 'redo'].map((command) =>
         shortcutMenuItem(command, {
-          click: () => {
-            const focused = BrowserWindow.getFocusedWindow();
-            if (!isWindowAlive(focused)) return;
-            if (isDialogWindow(focused)) {
-              focused.webContents[command]();
-            } else {
-              focused.webContents.send('quickboard:shortcut', command);
-            }
-          },
+          click: () => sendEditCommand(command),
         })
       ),
       { type: 'separator' },
       shortcutMenuItem('cut', { role: 'cut' }),
-      shortcutMenuItem('copy', { role: 'copy' }),
-      shortcutMenuItem('paste', { role: 'paste' }),
+      shortcutMenuItem('copy', {
+        click: () => sendEditCommand('copy'),
+      }),
+      shortcutMenuItem('paste', {
+        click: () => sendEditCommand('paste'),
+      }),
       shortcutMenuItem('select-all', { role: 'selectAll' }),
     ],
   };
